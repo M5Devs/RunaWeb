@@ -1,7 +1,7 @@
 // Service Worker for RunaWeb - Afterplay-Style Offline Architecture
 
-const CACHE_NAME = 'runaweb-shell-v3';
-const GAME_CACHE_NAME = 'runaweb-virtual-game';
+const SHELL_CACHE = 'runaweb-shell-v5';
+const GAME_CACHE = 'runaweb-virtual-game';
 
 const APP_SHELL_ASSETS = [
   './',
@@ -15,7 +15,7 @@ let gameFiles = new Map();
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then(async (cache) => {
+    caches.open(SHELL_CACHE).then(async (cache) => {
       // Pre-cache core app shell assets
       try {
         await cache.addAll(APP_SHELL_ASSETS);
@@ -32,7 +32,7 @@ self.addEventListener('activate', (event) => {
     caches.keys().then((cacheNames) => {
       return Promise.all(
         cacheNames.map((cacheName) => {
-          if (cacheName !== CACHE_NAME && cacheName !== GAME_CACHE_NAME) {
+          if (cacheName !== SHELL_CACHE && cacheName !== GAME_CACHE) {
             return caches.delete(cacheName);
           }
         })
@@ -43,7 +43,7 @@ self.addEventListener('activate', (event) => {
 
 async function saveGameAssetsToCache(files) {
   gameFiles.clear();
-  const gameCache = await caches.open(GAME_CACHE_NAME);
+  const gameCache = await caches.open(GAME_CACHE);
   // Clear previous game cache
   const keys = await gameCache.keys();
   await Promise.all(keys.map((req) => gameCache.delete(req)));
@@ -76,7 +76,7 @@ self.addEventListener('message', (event) => {
     event.waitUntil(saveGameAssetsToCache(event.data.files));
   } else if (event.data && event.data.type === 'CLEAR_GAME_CACHE') {
     event.waitUntil(
-      caches.delete(GAME_CACHE_NAME).then(() => {
+      caches.delete(GAME_CACHE).then(() => {
         gameFiles.clear();
       })
     );
@@ -117,7 +117,7 @@ self.addEventListener('fetch', (event) => {
 
   if (event.request.url.includes('/virtual-game/')) {
     event.respondWith((async () => {
-      const cache = await caches.open('runaweb-virtual-game');
+      const cache = await caches.open(GAME_CACHE);
       // 1. Direct match with full request URL (ignoring search params)
       let match = await cache.match(event.request, { ignoreSearch: true });
       if (match) return match;
@@ -148,7 +148,7 @@ self.addEventListener('fetch', (event) => {
         try {
           const networkResponse = await fetch(event.request);
           if (networkResponse && networkResponse.status === 200) {
-            const cache = await caches.open(CACHE_NAME);
+            const cache = await caches.open(SHELL_CACHE);
             await cache.put(event.request, networkResponse.clone());
             return networkResponse;
           }
@@ -189,7 +189,7 @@ self.addEventListener('fetch', (event) => {
               event.request.method === 'GET' &&
               !url.protocol.startsWith('chrome-extension')
             ) {
-              const cache = await caches.open(CACHE_NAME);
+              const cache = await caches.open(SHELL_CACHE);
               await cache.put(event.request, networkResponse.clone());
             }
           })
@@ -208,7 +208,7 @@ self.addEventListener('fetch', (event) => {
           event.request.method === 'GET' &&
           !url.protocol.startsWith('chrome-extension')
         ) {
-          const cache = await caches.open(CACHE_NAME);
+          const cache = await caches.open(SHELL_CACHE);
           await cache.put(event.request, networkResponse.clone());
         }
         return networkResponse;
