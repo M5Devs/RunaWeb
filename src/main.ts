@@ -1,4 +1,4 @@
-import { unzipSync } from 'fflate';
+import { unzip, Unzipped } from 'fflate';
 import { saveGame, getSavedGames, loadGameById, deleteGame, SavedGame } from './storage';
 import { PhysicalGamepadManager } from './gamepad';
 
@@ -40,6 +40,12 @@ const virtualGamepad = document.getElementById('virtual-gamepad') as HTMLDivElem
 const libraryGrid = document.getElementById('library-grid') as HTMLDivElement;
 const toastContainer = document.getElementById('toast-container') as HTMLDivElement;
 
+// Progress Loading Modal Elements
+const loadingOverlay = document.getElementById('loading-overlay') as HTMLDivElement;
+const loadingTitle = document.getElementById('loading-title') as HTMLHeadingElement;
+const loadingStatus = document.getElementById('loading-status') as HTMLParagraphElement;
+const loadingProgressBar = document.getElementById('loading-progress-bar') as HTMLDivElement;
+
 // Emulator Controls Elements
 const pauseBtn = document.getElementById('pause-btn') as HTMLButtonElement;
 const fastForwardBtn = document.getElementById('fast-forward-btn') as HTMLButtonElement;
@@ -73,6 +79,24 @@ let isFastForward = false;
 type AspectRatioMode = 'fit' | '4-3' | '16-9';
 let currentAspectRatio: AspectRatioMode = 'fit';
 let isCrtEnabled = false;
+
+function showProgressModal(title: string, statusText: string, progressPercent: number) {
+  if (!loadingOverlay) return;
+  if (loadingTitle) loadingTitle.textContent = title;
+  if (loadingStatus) loadingStatus.textContent = statusText;
+  if (loadingProgressBar) loadingProgressBar.style.width = `${Math.min(100, Math.max(0, progressPercent))}%`;
+  loadingOverlay.classList.remove('hidden');
+}
+
+function updateProgressModal(statusText: string, progressPercent: number) {
+  if (loadingStatus) loadingStatus.textContent = statusText;
+  if (loadingProgressBar) loadingProgressBar.style.width = `${Math.min(100, Math.max(0, progressPercent))}%`;
+}
+
+function hideProgressModal() {
+  if (!loadingOverlay) return;
+  loadingOverlay.classList.add('hidden');
+}
 
 function showToast(message: string) {
   if (!toastContainer) return;
@@ -172,6 +196,32 @@ function setupHudControls() {
   });
 }
 
+function setupMessageIsolation() {
+  window.addEventListener('message', (event: MessageEvent) => {
+    // Validate message source is from game iframe
+    if (gameFrame && event.source !== gameFrame.contentWindow) {
+      return;
+    }
+
+    // Validate origin match or null (iframe data/blob/about)
+    if (event.origin !== window.location.origin && event.origin !== 'null' && event.origin !== '') {
+      return;
+    }
+
+    const data = event.data;
+    if (!data || typeof data !== 'object') {
+      return;
+    }
+
+    // Process known application level IPC commands securely
+    if (data.type === 'RUNAWEB_GAME_PAUSE') {
+      togglePause();
+    } else if (data.type === 'RUNAWEB_GAME_RELOAD') {
+      if (currentFileMap) loadGame(currentFileMap, currentEntryPath);
+    }
+  });
+}
+
 function setViewMode(mode: 'hub' | 'theater') {
   currentMode = mode;
   if (mode === 'theater') {
@@ -265,7 +315,6 @@ function detectCoverImage(normalizedMap: Record<string, Uint8Array>): string | u
       if (ext === 'jpg' || ext === 'jpeg') mime = 'image/jpeg';
       else if (ext === 'ico') mime = 'image/x-icon';
 
-      // Convert Uint8Array to Base64 Data URL safely
       let binary = '';
       const len = fileBuffer.byteLength;
       for (let i = 0; i < len; i++) {
@@ -278,7 +327,7 @@ function detectCoverImage(normalizedMap: Record<string, Uint8Array>): string | u
   return undefined;
 }
 
-function processExtractedFiles(unzipped: Record<string, Uint8Array>): {
+function processExtractedFiles(unzipped: Unzipped): {
   normalizedMap: Record<string, Uint8Array>;
   entryPath: string;
 } {
@@ -359,22 +408,42 @@ function extractGameTitle(normalizedMap: Record<string, Uint8Array>, entryPath: 
   return defaultName.replace(/\.zip$/i, '');
 }
 
-function processZipBuffer(arrayBuffer: ArrayBuffer, fileName: string) {
-  statusEl.textContent = 'Unzipping archive...';
+function unzipAsync(uint8Array: Uint8Array): Promise<Unzipped> {
+  return new Promise((resolve, reject) => {
+    unzip(uint8Array, (err, unzipped) => {
+      if (err) {
+        reject(err);
+      } else {
+        resolve(unzipped);
+      }
+    });
+  });
+}
+
+async function processZipBuffer(arrayBuffer: ArrayBuffer, fileName: string) {
+  showProgressModal('Processing Game Archive', 'Decompressing game files...', 25);
+  statusEl.textContent = 'Decompressing archive...';
+
   try {
     const uint8Array = new Uint8Array(arrayBuffer);
-    const unzipped = unzipSync(uint8Array);
+    const unzipped = await unzipAsync(uint8Array);
+
+    updateProgressModal('Analyzing extracted archive...', 50);
 
     const filePaths = Object.keys(unzipped);
     if (filePaths.length === 0) {
+      hideProgressModal();
       statusEl.textContent = 'ZIP file is empty.';
+      showToast('Error: ZIP file is empty.');
       return;
     }
 
     const { normalizedMap, entryPath } = processExtractedFiles(unzipped);
 
     if (Object.keys(normalizedMap).length === 0) {
+      hideProgressModal();
       statusEl.textContent = 'ZIP file is empty or contains no valid files.';
+      showToast('Error: ZIP file contains no valid files.');
       return;
     }
 
@@ -389,10 +458,12 @@ function processZipBuffer(arrayBuffer: ArrayBuffer, fileName: string) {
     const title = extractGameTitle(normalizedMap, entryPath, fileName);
     activeGameName = title;
 
-    // Detect Cover Image
     const coverUrl = detectCoverImage(normalizedMap);
 
-    loadGame(normalizedMap, entryPath);
+    updateProgressModal('Populating virtual cache...', 75);
+    await loadGame(normalizedMap, entryPath);
+
+    updateProgressModal('Ready! Launching game...', 100);
 
     const gameId = fileName.toLowerCase().replace(/[^a-z0-9_-]/g, '_') + '_' + Date.now();
     const gameRecord: SavedGame = {
@@ -404,13 +475,25 @@ function processZipBuffer(arrayBuffer: ArrayBuffer, fileName: string) {
       coverUrl
     };
 
-    saveGame(gameRecord)
-      .then(() => refreshGameLibrary())
-      .catch((err) => console.error('Failed to save game to IndexedDB:', err));
+    try {
+      await saveGame(gameRecord);
+      await refreshGameLibrary();
+    } catch (saveErr) {
+      console.error('Failed to save game to IndexedDB:', saveErr);
+      if (saveErr instanceof Error && (saveErr.name === 'QuotaExceededError' || saveErr.message.includes('QuotaExceededError'))) {
+        showToast('Storage full! Please delete some saved games from your library to free up space.');
+      } else {
+        showToast('Could not save game to local library.');
+      }
+    } finally {
+      setTimeout(() => hideProgressModal(), 400);
+    }
 
   } catch (err) {
     console.error('Error processing zip file:', err);
+    hideProgressModal();
     statusEl.textContent = 'Failed to extract ZIP archive.';
+    showToast('Failed to extract ZIP archive.');
   }
 }
 
@@ -450,6 +533,9 @@ async function loadGame(fileMap: Record<string, Uint8Array>, entryPath: string =
   const keys = await cache.keys();
   await Promise.all(keys.map((req) => cache.delete(req)));
 
+  const totalFiles = Object.keys(fileMap).length;
+  let cachedCount = 0;
+
   const cachePromises: Promise<void>[] = [];
   for (const path in fileMap) {
     if (Object.prototype.hasOwnProperty.call(fileMap, path)) {
@@ -465,7 +551,15 @@ async function loadGame(fileMap: Record<string, Uint8Array>, entryPath: string =
           'Cache-Control': 'no-cache'
         }
       });
-      cachePromises.push(cache.put(fileUrl, response));
+      cachePromises.push(
+        cache.put(fileUrl, response).then(() => {
+          cachedCount++;
+          if (totalFiles > 0 && loadingOverlay && !loadingOverlay.classList.contains('hidden')) {
+            const pct = 75 + Math.round((cachedCount / totalFiles) * 20);
+            updateProgressModal(`Populating virtual cache (${cachedCount}/${totalFiles})...`, pct);
+          }
+        })
+      );
     }
   }
 
@@ -544,19 +638,38 @@ async function refreshGameLibrary() {
       btn.addEventListener('click', async () => {
         const id = btn.getAttribute('data-id');
         if (!id) return;
+
+        showProgressModal('Loading Game', 'Retrieving game from library...', 20);
         statusEl.textContent = 'Loading game from local library...';
+
         const game = await loadGameById(id);
         if (game) {
-          const uint8Array = new Uint8Array(game.zipData);
-          const unzipped = unzipSync(uint8Array);
-          const { normalizedMap, entryPath } = processExtractedFiles(unzipped);
-          currentFileMap = normalizedMap;
-          currentEntryPath = entryPath;
-          activeGameName = game.name;
-          loadGame(normalizedMap, entryPath);
-          statusEl.textContent = `Playing ${game.name} from library.`;
+          try {
+            updateProgressModal('Decompressing game files...', 50);
+            const uint8Array = new Uint8Array(game.zipData);
+            const unzipped = await unzipAsync(uint8Array);
+            const { normalizedMap, entryPath } = processExtractedFiles(unzipped);
+
+            currentFileMap = normalizedMap;
+            currentEntryPath = entryPath;
+            activeGameName = game.name;
+
+            updateProgressModal('Populating virtual cache...', 80);
+            await loadGame(normalizedMap, entryPath);
+
+            updateProgressModal('Ready! Launching game...', 100);
+            statusEl.textContent = `Playing ${game.name} from library.`;
+          } catch (err) {
+            console.error('Failed to decompress saved game archive:', err);
+            statusEl.textContent = 'Failed to decompress saved game.';
+            showToast('Error decompressing saved game.');
+          } finally {
+            setTimeout(() => hideProgressModal(), 400);
+          }
         } else {
+          hideProgressModal();
           statusEl.textContent = 'Failed to find game in storage.';
+          showToast('Game not found in local library.');
         }
       });
     });
@@ -568,6 +681,7 @@ async function refreshGameLibrary() {
         if (!id) return;
         await deleteGame(id);
         refreshGameLibrary();
+        showToast('Game deleted from library.');
       });
     });
 
@@ -579,6 +693,7 @@ async function refreshGameLibrary() {
 function handleFileSelect(file: File) {
   if (!file.name.toLowerCase().endsWith('.zip')) {
     statusEl.textContent = 'Please select a valid .zip file.';
+    showToast('Please select a valid .zip file.');
     return;
   }
   statusEl.textContent = `Reading ${file.name}...`;
@@ -1036,6 +1151,7 @@ setupErudaDevTools();
 setupHudControls();
 setupSaveManager();
 setupVirtualGamepad();
+setupMessageIsolation();
 refreshGameLibrary();
 
 setViewMode('hub');

@@ -28,14 +28,44 @@ function openDB(): Promise<IDBDatabase> {
 }
 
 export async function saveGame(game: SavedGame): Promise<void> {
+  if (navigator.storage && navigator.storage.estimate) {
+    try {
+      const estimate = await navigator.storage.estimate();
+      if (estimate.quota !== undefined && estimate.usage !== undefined) {
+        const remaining = estimate.quota - estimate.usage;
+        if (remaining < game.size) {
+          const err = new Error('QuotaExceededError: Storage quota exceeded.');
+          err.name = 'QuotaExceededError';
+          throw err;
+        }
+      }
+    } catch (e) {
+      if (e instanceof Error && e.name === 'QuotaExceededError') {
+        throw e;
+      }
+      console.warn('Storage estimate failed or skipped:', e);
+    }
+  }
+
   const db = await openDB();
   return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readwrite');
-    const store = tx.objectStore(STORE_NAME);
-    const request = store.put(game);
+    try {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      const request = store.put(game);
 
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve();
+      request.onerror = () => {
+        const err = request.error || new Error('Failed to store game in IndexedDB.');
+        reject(err);
+      };
+      tx.onerror = () => {
+        const err = tx.error || new Error('Transaction error in IndexedDB.');
+        reject(err);
+      };
+    } catch (err) {
+      reject(err);
+    }
   });
 }
 
