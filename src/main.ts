@@ -1,5 +1,6 @@
 import { unzipSync } from 'fflate';
 import { saveGame, getSavedGames, loadGameById, deleteGame, SavedGame } from './storage';
+import { PhysicalGamepadManager } from './gamepad';
 
 declare global {
   interface Window {
@@ -10,6 +11,9 @@ declare global {
       destroy: () => void;
       _isInit?: boolean;
     };
+    __runa_orig_raf?: typeof window.requestAnimationFrame;
+    __runa_raf_speed_set?: boolean;
+    __runa_speed_mult?: number;
   }
 }
 
@@ -22,6 +26,7 @@ const dropzone = document.getElementById('dropzone') as HTMLDivElement;
 const fileInput = document.getElementById('file-input') as HTMLInputElement;
 const statusEl = document.getElementById('status') as HTMLDivElement;
 const gameFrame = document.getElementById('game-frame') as HTMLIFrameElement;
+const gameWrapper = document.getElementById('game-wrapper') as HTMLDivElement;
 const reloadBtn = document.getElementById('reload-btn') as HTMLButtonElement;
 const fullscreenBtn = document.getElementById('fullscreen-btn') as HTMLButtonElement;
 const exitBtn = document.getElementById('exit-btn') as HTMLButtonElement;
@@ -33,6 +38,14 @@ const gamepadToggleBtn = document.getElementById('gamepad-toggle-btn') as HTMLBu
 const debugToggleBtn = document.getElementById('debug-toggle-btn') as HTMLButtonElement;
 const virtualGamepad = document.getElementById('virtual-gamepad') as HTMLDivElement;
 const libraryGrid = document.getElementById('library-grid') as HTMLDivElement;
+const toastContainer = document.getElementById('toast-container') as HTMLDivElement;
+
+// Emulator Controls Elements
+const pauseBtn = document.getElementById('pause-btn') as HTMLButtonElement;
+const fastForwardBtn = document.getElementById('fast-forward-btn') as HTMLButtonElement;
+const aspectBtn = document.getElementById('aspect-btn') as HTMLButtonElement;
+const crtBtn = document.getElementById('crt-btn') as HTMLButtonElement;
+const pauseOverlay = document.getElementById('pause-overlay') as HTMLDivElement;
 
 // Save Modal Elements
 const savesToggleBtn = document.getElementById('saves-toggle-btn') as HTMLButtonElement;
@@ -53,6 +66,26 @@ let erudaActive = false;
 let autoHideTimer: number | null = null;
 let isHeaderPinned = false;
 let currentMode: 'hub' | 'theater' = 'hub';
+
+// Emulator State
+let isPaused = false;
+let isFastForward = false;
+type AspectRatioMode = 'fit' | '4-3' | '16-9';
+let currentAspectRatio: AspectRatioMode = 'fit';
+let isCrtEnabled = false;
+
+function showToast(message: string) {
+  if (!toastContainer) return;
+  const toast = document.createElement('div');
+  toast.className = 'toast';
+  toast.textContent = message;
+  toastContainer.appendChild(toast);
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transition = 'opacity 0.3s ease';
+    setTimeout(() => toast.remove(), 300);
+  }, 3000);
+}
 
 function resetAutoHideTimer() {
   if (autoHideTimer !== null) {
@@ -93,7 +126,6 @@ function setupHudControls() {
     });
   }
 
-  // Hover or touch at top 30px edge reveals header temporarily
   const handleActivity = (e: MouseEvent | TouchEvent) => {
     if (currentMode !== 'theater') return;
 
@@ -116,7 +148,6 @@ function setupHudControls() {
   window.addEventListener('mousemove', handleActivity);
   window.addEventListener('touchstart', handleActivity, { passive: true });
 
-  // Clicking outside expanded header during gameplay collapses header
   window.addEventListener('click', (e) => {
     if (currentMode !== 'theater') return;
     const target = e.target as Node;
@@ -148,6 +179,11 @@ function setViewMode(mode: 'hub' | 'theater') {
     document.body.classList.add('mode-theater', 'is-playing');
     if (exitBtn) exitBtn.style.display = 'inline-flex';
 
+    pauseBtn.disabled = false;
+    fastForwardBtn.disabled = false;
+    aspectBtn.disabled = false;
+    crtBtn.disabled = false;
+
     isHeaderPinned = false;
     expandHeader();
   } else {
@@ -155,13 +191,21 @@ function setViewMode(mode: 'hub' | 'theater') {
     document.body.classList.add('mode-hub');
     if (exitBtn) exitBtn.style.display = 'none';
 
+    pauseBtn.disabled = true;
+    fastForwardBtn.disabled = true;
+    aspectBtn.disabled = true;
+    crtBtn.disabled = true;
+
+    // Reset emulator states when returning to hub
+    if (isPaused) togglePause();
+    if (isFastForward) toggleFastForward();
+
     if (autoHideTimer !== null) {
       window.clearTimeout(autoHideTimer);
       autoHideTimer = null;
     }
     appHeader.classList.remove('hud-collapsed', 'hud-hidden');
 
-    // Reset iframe when exiting to hub
     gameFrame.src = 'about:blank';
     reloadBtn.disabled = true;
     fullscreenBtn.disabled = true;
@@ -207,7 +251,32 @@ async function registerServiceWorker() {
   }
 }
 
+// Cover Detection Engine
+const COVER_NAMES = ['cover.png', 'cover.jpg', 'cover.jpeg', 'icon.png', 'thumbnail.png', 'favicon.ico'];
 
+function detectCoverImage(normalizedMap: Record<string, Uint8Array>): string | undefined {
+  const keys = Object.keys(normalizedMap);
+  for (const candidate of COVER_NAMES) {
+    const match = keys.find((k) => k.toLowerCase() === candidate || k.toLowerCase().endsWith('/' + candidate));
+    if (match) {
+      const fileBuffer = normalizedMap[match];
+      const ext = match.split('.').pop()?.toLowerCase() || 'png';
+      let mime = 'image/png';
+      if (ext === 'jpg' || ext === 'jpeg') mime = 'image/jpeg';
+      else if (ext === 'ico') mime = 'image/x-icon';
+
+      // Convert Uint8Array to Base64 Data URL safely
+      let binary = '';
+      const len = fileBuffer.byteLength;
+      for (let i = 0; i < len; i++) {
+        binary += String.fromCharCode(fileBuffer[i]);
+      }
+      const base64 = window.btoa(binary);
+      return `data:${mime};base64,${base64}`;
+    }
+  }
+  return undefined;
+}
 
 function processExtractedFiles(unzipped: Record<string, Uint8Array>): {
   normalizedMap: Record<string, Uint8Array>;
@@ -215,12 +284,10 @@ function processExtractedFiles(unzipped: Record<string, Uint8Array>): {
 } {
   const filePaths = Object.keys(unzipped);
 
-  // Filter out directory entries
   let paths = filePaths
     .map((p) => p.replace(/\\/g, '/'))
     .filter((p) => !p.endsWith('/'));
 
-  // Detect common root prefix iteratively
   let commonPrefix = '';
   while (paths.length > 0) {
     const firstPathParts = paths[0].split('/');
@@ -242,20 +309,18 @@ function processExtractedFiles(unzipped: Record<string, Uint8Array>): {
   const normalizedMap: Record<string, Uint8Array> = {};
   for (const rawPath of filePaths) {
     const normalizedRaw = rawPath.replace(/\\/g, '/');
-    if (normalizedRaw.endsWith('/')) continue; // Skip directory entries
+    if (normalizedRaw.endsWith('/')) continue;
 
     let cleanPath = normalizedRaw;
     if (commonPrefix && cleanPath.startsWith(commonPrefix)) {
       cleanPath = cleanPath.slice(commonPrefix.length);
     }
-    // Normalize slashes and strip leading slashes
     cleanPath = cleanPath.replace(/^\/+/, '');
     if (cleanPath) {
       normalizedMap[cleanPath] = unzipped[rawPath];
     }
   }
 
-  // Find actual entry point: Look for index.html anywhere in the zip hierarchy
   let entryPath = 'index.html';
   if ('index.html' in normalizedMap) {
     entryPath = 'index.html';
@@ -323,16 +388,20 @@ function processZipBuffer(arrayBuffer: ArrayBuffer, fileName: string) {
     currentEntryPath = entryPath;
     const title = extractGameTitle(normalizedMap, entryPath, fileName);
     activeGameName = title;
+
+    // Detect Cover Image
+    const coverUrl = detectCoverImage(normalizedMap);
+
     loadGame(normalizedMap, entryPath);
 
-    // Save game to IndexedDB Library automatically
     const gameId = fileName.toLowerCase().replace(/[^a-z0-9_-]/g, '_') + '_' + Date.now();
     const gameRecord: SavedGame = {
       id: gameId,
       name: title,
       date: Date.now(),
       zipData: arrayBuffer,
-      size: arrayBuffer.byteLength
+      size: arrayBuffer.byteLength,
+      coverUrl
     };
 
     saveGame(gameRecord)
@@ -377,14 +446,10 @@ function getMimeType(filePath: string): string {
 async function loadGame(fileMap: Record<string, Uint8Array>, entryPath: string = 'index.html') {
   currentEntryPath = entryPath;
 
-  // Access shared window.caches directly
   const cache = await caches.open('runaweb-virtual-game');
-
-  // Clear old cached entries from previous games
   const keys = await cache.keys();
   await Promise.all(keys.map((req) => cache.delete(req)));
 
-  // Normalize and iterate over all unzipped files
   const cachePromises: Promise<void>[] = [];
   for (const path in fileMap) {
     if (Object.prototype.hasOwnProperty.call(fileMap, path)) {
@@ -404,13 +469,10 @@ async function loadGame(fileMap: Record<string, Uint8Array>, entryPath: string =
     }
   }
 
-  // CRITICAL: Wait for ALL cache insertions to complete before touching the iframe
   await Promise.all(cachePromises);
 
-  // Transition into Theater / Playing View
   setViewMode('theater');
 
-  // ONLY THEN, update #game-frame
   const cleanEntry = entryPath.replace(/^\/+/, '');
   const entryUrl = new URL(`${import.meta.env.BASE_URL}virtual-game/${cleanEntry}`, window.location.origin).href;
   gameFrame.src = entryUrl;
@@ -441,7 +503,6 @@ async function refreshGameLibrary() {
       return;
     }
 
-    // Sort newest first
     games.sort((a, b) => b.date - a.date);
 
     games.forEach((game) => {
@@ -453,13 +514,17 @@ async function refreshGameLibrary() {
         day: 'numeric'
       });
 
-      card.innerHTML = `
-        <div>
-          <div class="game-card-icon-wrapper">
+      const coverHtml = game.coverUrl
+        ? `<div class="game-card-cover-wrapper"><img src="${game.coverUrl}" alt="${game.name}" class="game-card-cover" /></div>`
+        : `<div class="game-card-icon-wrapper">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
               <path d="M21 6H3c-1.1 0-2 .9-2 2v8c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-10 7H9v2H7v-2H5v-2h2V9h2v2h2v2zm4.5 1c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm3-3c-.83 0-1.5-.67-1.5-1.5S17.67 9 18.5 9s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/>
             </svg>
-          </div>
+           </div>`;
+
+      card.innerHTML = `
+        <div>
+          ${coverHtml}
           <div class="game-card-info">
             <div class="game-card-title" title="${game.name}">${game.name}</div>
             <div class="game-card-meta">${formatBytes(game.size)} • ${formattedDate}</div>
@@ -474,7 +539,6 @@ async function refreshGameLibrary() {
       libraryGrid.appendChild(card);
     });
 
-    // Attach click event handlers
     const playButtons = libraryGrid.querySelectorAll<HTMLButtonElement>('.btn-play');
     playButtons.forEach((btn) => {
       btn.addEventListener('click', async () => {
@@ -580,6 +644,121 @@ fullscreenBtn.addEventListener('click', () => {
   }
 });
 
+// --- Emulator Features: Pause, Fast-Forward, Aspect Ratio, CRT Filter ---
+
+function togglePause() {
+  isPaused = !isPaused;
+  pauseBtn.classList.toggle('active', isPaused);
+  pauseBtn.textContent = isPaused ? '▶️ Resume' : '⏸️ Pause';
+
+  if (pauseOverlay) {
+    pauseOverlay.classList.toggle('visible', isPaused);
+  }
+
+  try {
+    const win = gameFrame.contentWindow as Window | null;
+    if (win) {
+      if (isPaused) {
+        const audios = win.document.querySelectorAll('audio, video');
+        audios.forEach((a) => (a as HTMLMediaElement).pause());
+        if (!win.__runa_orig_raf) {
+          win.__runa_orig_raf = win.requestAnimationFrame;
+          win.requestAnimationFrame = () => 0;
+        }
+      } else {
+        if (win.__runa_orig_raf) {
+          win.requestAnimationFrame = win.__runa_orig_raf;
+          delete win.__runa_orig_raf;
+        }
+        const audios = win.document.querySelectorAll('audio, video');
+        audios.forEach((a) => (a as HTMLMediaElement).play().catch(() => {}));
+      }
+    }
+  } catch (err) {
+    console.warn('Iframe pause evaluation notice:', err);
+  }
+}
+
+function toggleFastForward() {
+  isFastForward = !isFastForward;
+  fastForwardBtn.classList.toggle('active', isFastForward);
+  fastForwardBtn.textContent = isFastForward ? '⏩ 2x' : '⏩ 1x';
+
+  try {
+    const win = gameFrame.contentWindow as Window | null;
+    if (win) {
+      const rate = isFastForward ? 2.0 : 1.0;
+      const audios = win.document.querySelectorAll('audio, video');
+      audios.forEach((a) => {
+        (a as HTMLMediaElement).playbackRate = rate;
+      });
+      if (!win.__runa_raf_speed_set) {
+        win.__runa_raf_speed_set = true;
+        const origRaf = win.requestAnimationFrame.bind(win);
+        win.requestAnimationFrame = (cb: FrameRequestCallback) => {
+          return origRaf((time) => {
+            cb(time * (win.__runa_speed_mult || 1));
+          });
+        };
+      }
+      win.__runa_speed_mult = rate;
+    }
+  } catch (err) {
+    console.warn('Iframe fast-forward evaluation notice:', err);
+  }
+}
+
+function cycleAspectRatio() {
+  if (currentAspectRatio === 'fit') {
+    currentAspectRatio = '4-3';
+    aspectBtn.textContent = '📐 4:3';
+  } else if (currentAspectRatio === '4-3') {
+    currentAspectRatio = '16-9';
+    aspectBtn.textContent = '📐 16:9';
+  } else {
+    currentAspectRatio = 'fit';
+    aspectBtn.textContent = '📐 Fit';
+  }
+
+  if (gameWrapper) {
+    gameWrapper.className = `aspect-${currentAspectRatio}`;
+  }
+}
+
+function toggleCrtFilter() {
+  isCrtEnabled = !isCrtEnabled;
+  crtBtn.classList.toggle('active', isCrtEnabled);
+  if (gameContainer) {
+    gameContainer.classList.toggle('crt-filter', isCrtEnabled);
+  }
+}
+
+if (pauseBtn) pauseBtn.addEventListener('click', togglePause);
+if (fastForwardBtn) fastForwardBtn.addEventListener('click', toggleFastForward);
+if (aspectBtn) aspectBtn.addEventListener('click', cycleAspectRatio);
+if (crtBtn) crtBtn.addEventListener('click', toggleCrtFilter);
+
+// --- Native Gamepad Manager Integration ---
+
+const gamepadManager = new PhysicalGamepadManager({
+  getIframeWindow: () => ({
+    window: gameFrame.contentWindow,
+    document: gameFrame.contentDocument
+  }),
+  onGamepadConnected: () => {
+    virtualGamepad.classList.add('hidden');
+    gamepadToggleBtn.classList.remove('active');
+  },
+  onGamepadDisconnected: () => {
+    const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+    if (isTouchDevice) {
+      virtualGamepad.classList.remove('hidden');
+      gamepadToggleBtn.classList.add('active');
+    }
+  },
+  showToast
+});
+
 // --- Save State Manager System ---
 
 function getIframeLocalStorage(): Record<string, string> {
@@ -598,7 +777,6 @@ function getIframeLocalStorage(): Record<string, string> {
     console.warn('Could not read iframe localStorage directly, falling back to top localStorage:', err);
   }
 
-  // Fallback / complement with top localStorage
   try {
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
@@ -659,7 +837,6 @@ function setupSaveManager() {
     });
   }
 
-  // Export Save Button
   if (exportSaveBtn) {
     exportSaveBtn.addEventListener('click', () => {
       const storageKeys = getIframeLocalStorage();
@@ -690,7 +867,6 @@ function setupSaveManager() {
     });
   }
 
-  // Import Save Button
   if (importSaveBtn && importSaveInput) {
     importSaveBtn.addEventListener('click', () => {
       importSaveInput.click();
@@ -720,7 +896,6 @@ function setupSaveManager() {
 
           setTimeout(() => {
             if (saveModal) saveModal.classList.add('hidden');
-            // Automatically reload game frame to pick up imported save data
             if (currentFileMap) {
               loadGame(currentFileMap, currentEntryPath);
             } else if (gameFrame.src) {
@@ -802,7 +977,7 @@ function handleButtonPress(btnKey: string, type: 'keydown' | 'keyup') {
 function setupVirtualGamepad() {
   const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 
-  if (isTouchDevice) {
+  if (isTouchDevice && !gamepadManager.isConnected) {
     virtualGamepad.classList.remove('hidden');
     gamepadToggleBtn.classList.add('active');
   }
@@ -818,7 +993,6 @@ function setupVirtualGamepad() {
     const btnKey = btn.getAttribute('data-key') || btn.getAttribute('data-button');
     if (!btnKey) return;
 
-    // Prevent default touch behaviors
     const handleStart = (e: Event) => {
       e.preventDefault();
       btn.classList.add('pressed');
@@ -835,7 +1009,6 @@ function setupVirtualGamepad() {
     btn.addEventListener('touchend', handleEnd, { passive: false });
     btn.addEventListener('touchcancel', handleEnd, { passive: false });
 
-    // Fallback for desktop mouse testing
     btn.addEventListener('mousedown', (e) => {
       e.preventDefault();
       btn.classList.add('pressed');
@@ -858,7 +1031,6 @@ function setupVirtualGamepad() {
   });
 }
 
-// Initialize Service Worker, Eruda, Touch Gamepad, HUD, Save Manager, and Game Library
 registerServiceWorker();
 setupErudaDevTools();
 setupHudControls();
@@ -866,5 +1038,4 @@ setupSaveManager();
 setupVirtualGamepad();
 refreshGameLibrary();
 
-// Default mode is hub
 setViewMode('hub');

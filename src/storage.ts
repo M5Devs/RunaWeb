@@ -4,6 +4,7 @@ export interface SavedGame {
   date: number;
   zipData: ArrayBuffer;
   size: number;
+  coverUrl?: string;
 }
 
 const DB_NAME = 'runaweb_db';
