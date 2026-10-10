@@ -196,6 +196,26 @@ function setupHudControls() {
   });
 }
 
+function configureIframeIsolation() {
+  if (gameFrame) {
+    gameFrame.referrerPolicy = 'no-referrer';
+    gameFrame.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-pointer-lock allow-forms');
+  }
+
+  // Defensive global error handling for parent DOM traversal / cross-origin sandbox exceptions
+  window.addEventListener('error', (event) => {
+    if (
+      event.message &&
+      (event.message.includes('Permission denied') ||
+       event.message.includes('Blocked a frame') ||
+       event.message.includes('SecurityError'))
+    ) {
+      console.warn('Caught cross-origin/sandbox DOM traversal attempt from game script:', event.message);
+      event.preventDefault();
+    }
+  });
+}
+
 function setupMessageIsolation() {
   window.addEventListener('message', (event: MessageEvent) => {
     // Validate message source is from game iframe
@@ -209,7 +229,7 @@ function setupMessageIsolation() {
     }
 
     const data = event.data;
-    if (!data || typeof data !== 'object') {
+    if (!data || typeof data !== 'object' || typeof data.type !== 'string') {
       return;
     }
 
@@ -569,7 +589,11 @@ async function loadGame(fileMap: Record<string, Uint8Array>, entryPath: string =
 
   const cleanEntry = entryPath.replace(/^\/+/, '');
   const entryUrl = new URL(`${import.meta.env.BASE_URL}virtual-game/${cleanEntry}`, window.location.origin).href;
-  gameFrame.src = entryUrl;
+  if (gameFrame) {
+    gameFrame.referrerPolicy = 'no-referrer';
+    gameFrame.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-pointer-lock allow-forms');
+    gameFrame.src = entryUrl;
+  }
   reloadBtn.disabled = false;
   fullscreenBtn.disabled = false;
 }
@@ -585,15 +609,22 @@ async function refreshGameLibrary() {
 
   try {
     const games = await getSavedGames();
-    libraryGrid.innerHTML = '';
+    libraryGrid.replaceChildren();
 
     if (games.length === 0) {
-      libraryGrid.innerHTML = `
-        <div class="library-empty">
-          <span class="library-empty-icon">👾</span>
-          <p>Your arcade shelf is empty! Drop a game to start your collection.</p>
-        </div>
-      `;
+      const emptyContainer = document.createElement('div');
+      emptyContainer.className = 'library-empty';
+
+      const emptyIcon = document.createElement('span');
+      emptyIcon.className = 'library-empty-icon';
+      emptyIcon.textContent = '👾';
+
+      const emptyText = document.createElement('p');
+      emptyText.textContent = 'Your arcade shelf is empty! Drop a game to start your collection.';
+
+      emptyContainer.appendChild(emptyIcon);
+      emptyContainer.appendChild(emptyText);
+      libraryGrid.appendChild(emptyContainer);
       return;
     }
 
@@ -608,27 +639,72 @@ async function refreshGameLibrary() {
         day: 'numeric'
       });
 
-      const coverHtml = game.coverUrl
-        ? `<div class="game-card-cover-wrapper"><img src="${game.coverUrl}" alt="${game.name}" class="game-card-cover" /></div>`
-        : `<div class="game-card-icon-wrapper">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M21 6H3c-1.1 0-2 .9-2 2v8c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-10 7H9v2H7v-2H5v-2h2V9h2v2h2v2zm4.5 1c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm3-3c-.83 0-1.5-.67-1.5-1.5S17.67 9 18.5 9s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/>
-            </svg>
-           </div>`;
+      const topSection = document.createElement('div');
 
-      card.innerHTML = `
-        <div>
-          ${coverHtml}
-          <div class="game-card-info">
-            <div class="game-card-title" title="${game.name}">${game.name}</div>
-            <div class="game-card-meta">${formatBytes(game.size)} • ${formattedDate}</div>
-          </div>
-        </div>
-        <div class="game-card-actions">
-          <button class="btn-play" data-id="${game.id}">▶ Play</button>
-          <button class="btn-delete" data-id="${game.id}" title="Delete Game">🗑</button>
-        </div>
-      `;
+      if (game.coverUrl) {
+        const coverWrapper = document.createElement('div');
+        coverWrapper.className = 'game-card-cover-wrapper';
+        const img = document.createElement('img');
+        img.src = game.coverUrl;
+        img.alt = game.name;
+        img.className = 'game-card-cover';
+        coverWrapper.appendChild(img);
+        topSection.appendChild(coverWrapper);
+      } else {
+        const iconWrapper = document.createElement('div');
+        iconWrapper.className = 'game-card-icon-wrapper';
+
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.setAttribute('width', '24');
+        svg.setAttribute('height', '24');
+        svg.setAttribute('viewBox', '0 0 24 24');
+        svg.setAttribute('fill', 'currentColor');
+
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute(
+          'd',
+          'M21 6H3c-1.1 0-2 .9-2 2v8c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-10 7H9v2H7v-2H5v-2h2V9h2v2h2v2zm4.5 1c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm3-3c-.83 0-1.5-.67-1.5-1.5S17.67 9 18.5 9s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z'
+        );
+        svg.appendChild(path);
+        iconWrapper.appendChild(svg);
+        topSection.appendChild(iconWrapper);
+      }
+
+      const infoContainer = document.createElement('div');
+      infoContainer.className = 'game-card-info';
+
+      const titleEl = document.createElement('div');
+      titleEl.className = 'game-card-title';
+      titleEl.title = game.name;
+      titleEl.textContent = game.name;
+
+      const metaEl = document.createElement('div');
+      metaEl.className = 'game-card-meta';
+      metaEl.textContent = `${formatBytes(game.size)} • ${formattedDate}`;
+
+      infoContainer.appendChild(titleEl);
+      infoContainer.appendChild(metaEl);
+      topSection.appendChild(infoContainer);
+
+      const actionsContainer = document.createElement('div');
+      actionsContainer.className = 'game-card-actions';
+
+      const playBtn = document.createElement('button');
+      playBtn.className = 'btn-play';
+      playBtn.setAttribute('data-id', game.id);
+      playBtn.textContent = '▶ Play';
+
+      const deleteBtn = document.createElement('button');
+      deleteBtn.className = 'btn-delete';
+      deleteBtn.setAttribute('data-id', game.id);
+      deleteBtn.title = 'Delete Game';
+      deleteBtn.textContent = '🗑';
+
+      actionsContainer.appendChild(playBtn);
+      actionsContainer.appendChild(deleteBtn);
+
+      card.appendChild(topSection);
+      card.appendChild(actionsContainer);
 
       libraryGrid.appendChild(card);
     });
@@ -1054,31 +1130,35 @@ const BUTTON_KEY_MAPPINGS: Record<string, KeyMapping[]> = {
 };
 
 function dispatchKeyEvent(type: 'keydown' | 'keyup', mapping: KeyMapping) {
-  const targetWindow = gameFrame.contentWindow;
-  const targetDocument = gameFrame.contentDocument;
+  try {
+    const targetWindow = gameFrame.contentWindow;
+    const targetDocument = gameFrame.contentDocument;
 
-  if (!targetWindow || !targetDocument) return;
+    if (!targetWindow || !targetDocument) return;
 
-  const eventInit: KeyboardEventInit = {
-    key: mapping.key,
-    code: mapping.code,
-    keyCode: mapping.keyCode,
-    which: mapping.keyCode,
-    bubbles: true,
-    cancelable: true,
-    composed: true,
-    view: targetWindow
-  };
+    const eventInit: KeyboardEventInit = {
+      key: mapping.key,
+      code: mapping.code,
+      keyCode: mapping.keyCode,
+      which: mapping.keyCode,
+      bubbles: true,
+      cancelable: true,
+      composed: true,
+      view: targetWindow
+    };
 
-  const event = new KeyboardEvent(type, eventInit);
-  Object.defineProperty(event, 'keyCode', { get: () => mapping.keyCode });
-  Object.defineProperty(event, 'which', { get: () => mapping.keyCode });
+    const event = new KeyboardEvent(type, eventInit);
+    Object.defineProperty(event, 'keyCode', { get: () => mapping.keyCode });
+    Object.defineProperty(event, 'which', { get: () => mapping.keyCode });
 
-  targetDocument.dispatchEvent(event);
-  if (targetDocument.activeElement && targetDocument.activeElement !== targetDocument.body) {
-    targetDocument.activeElement.dispatchEvent(event);
-  } else {
-    targetWindow.dispatchEvent(event);
+    targetDocument.dispatchEvent(event);
+    if (targetDocument.activeElement && targetDocument.activeElement !== targetDocument.body) {
+      targetDocument.activeElement.dispatchEvent(event);
+    } else {
+      targetWindow.dispatchEvent(event);
+    }
+  } catch (err) {
+    console.warn('Dispatch key event error:', err);
   }
 }
 
@@ -1147,6 +1227,7 @@ function setupVirtualGamepad() {
 }
 
 registerServiceWorker();
+configureIframeIsolation();
 setupErudaDevTools();
 setupHudControls();
 setupSaveManager();
