@@ -13,7 +13,7 @@ declare global {
   }
 }
 
-let swRegistration: ServiceWorkerRegistration | null = null;
+// swRegistration
 let currentFileMap: Record<string, Uint8Array> | null = null;
 let currentEntryPath: string = 'index.html';
 let activeGameName: string = 'active_game';
@@ -196,7 +196,7 @@ async function registerServiceWorker() {
   if ('serviceWorker' in navigator) {
     try {
       const swUrl = baseUrl + 'sw.js';
-      swRegistration = await navigator.serviceWorker.register(swUrl, { scope: baseUrl });
+      await navigator.serviceWorker.register(swUrl, { scope: baseUrl });
       statusEl.textContent = 'Service Worker registered successfully.';
     } catch (error) {
       console.error('Service Worker registration failed:', error);
@@ -207,25 +207,7 @@ async function registerServiceWorker() {
   }
 }
 
-async function getActiveServiceWorker(): Promise<ServiceWorker> {
-  if (navigator.serviceWorker.controller) {
-    return navigator.serviceWorker.controller;
-  }
-  if (swRegistration?.active) {
-    return swRegistration.active;
-  }
-  return new Promise((resolve) => {
-    const interval = setInterval(() => {
-      if (navigator.serviceWorker.controller) {
-        clearInterval(interval);
-        resolve(navigator.serviceWorker.controller);
-      } else if (swRegistration?.active) {
-        clearInterval(interval);
-        resolve(swRegistration.active);
-      }
-    }, 100);
-  });
-}
+
 
 function processExtractedFiles(unzipped: Record<string, Uint8Array>): {
   normalizedMap: Record<string, Uint8Array>;
@@ -363,24 +345,77 @@ function processZipBuffer(arrayBuffer: ArrayBuffer, fileName: string) {
   }
 }
 
+const MIME_TYPES: Record<string, string> = {
+  html: 'text/html',
+  htm: 'text/html',
+  js: 'text/javascript',
+  mjs: 'text/javascript',
+  css: 'text/css',
+  wasm: 'application/wasm',
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  gif: 'image/gif',
+  svg: 'image/svg+xml',
+  webp: 'image/webp',
+  mp3: 'audio/mpeg',
+  ogg: 'audio/ogg',
+  wav: 'audio/wav',
+  json: 'application/json',
+  txt: 'text/plain',
+  xml: 'application/xml',
+  ttf: 'font/ttf',
+  woff: 'font/woff',
+  woff2: 'font/woff2'
+};
+
+function getMimeType(filePath: string): string {
+  const ext = filePath.split('.').pop()?.toLowerCase() || '';
+  return MIME_TYPES[ext] || 'application/octet-stream';
+}
+
 async function loadGame(fileMap: Record<string, Uint8Array>, entryPath: string = 'index.html') {
   currentEntryPath = entryPath;
-  const sw = await getActiveServiceWorker();
-  sw.postMessage({
-    type: 'SET_GAME_FILES',
-    files: fileMap
-  });
+
+  // Access shared window.caches directly
+  const cache = await caches.open('runaweb-virtual-game');
+
+  // Clear old cached entries from previous games
+  const keys = await cache.keys();
+  await Promise.all(keys.map((req) => cache.delete(req)));
+
+  // Normalize and iterate over all unzipped files
+  const cachePromises: Promise<void>[] = [];
+  for (const path in fileMap) {
+    if (Object.prototype.hasOwnProperty.call(fileMap, path)) {
+      const normalizedPath = path.replace(/\\/g, "/").replace(/^\/+/, "");
+      const fileBuffer = fileMap[path];
+      const mimeType = getMimeType(normalizedPath);
+
+      const fileUrl = new URL(`${import.meta.env.BASE_URL}virtual-game/${normalizedPath}`, window.location.origin).href;
+      const response = new Response(fileBuffer.buffer.slice(fileBuffer.byteOffset, fileBuffer.byteOffset + fileBuffer.byteLength) as ArrayBuffer, {
+        headers: {
+          'Content-Type': mimeType,
+          'Content-Length': fileBuffer.byteLength.toString(),
+          'Cache-Control': 'no-cache'
+        }
+      });
+      cachePromises.push(cache.put(fileUrl, response));
+    }
+  }
+
+  // CRITICAL: Wait for ALL cache insertions to complete before touching the iframe
+  await Promise.all(cachePromises);
 
   // Transition into Theater / Playing View
   setViewMode('theater');
 
-  // Small delay to ensure SW stores files before iframe fetch
-  setTimeout(() => {
-    const cleanEntry = entryPath.replace(/^\/+/, '');
-    gameFrame.src = baseUrl + 'virtual-game/' + cleanEntry;
-    reloadBtn.disabled = false;
-    fullscreenBtn.disabled = false;
-  }, 100);
+  // ONLY THEN, update #game-frame
+  const cleanEntry = entryPath.replace(/^\/+/, '');
+  const entryUrl = new URL(`${import.meta.env.BASE_URL}virtual-game/${cleanEntry}`, window.location.origin).href;
+  gameFrame.src = entryUrl;
+  reloadBtn.disabled = false;
+  fullscreenBtn.disabled = false;
 }
 
 function formatBytes(bytes: number): string {
