@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
     <title>RunaWeb - In-Memory Game Runner</title>
+    <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
     <style>
       :root {
         --bg-color: #0b0c10;
@@ -375,6 +376,7 @@
     <header>
       <div class="logo">⚡ RUNAWEB</div>
       <div class="controls">
+        <button id="debug-toggle-btn" class="btn" title="Toggle Eruda Mobile DevTools">🐛 Debug</button>
         <button id="gamepad-toggle-btn" class="btn" title="Toggle Virtual Gamepad">🎮 Gamepad</button>
         <button id="reload-btn" class="btn" disabled>Reload</button>
         <button id="fullscreen-btn" class="btn" disabled>Fullscreen</button>

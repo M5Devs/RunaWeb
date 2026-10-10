@@ -1,7 +1,20 @@
 import { unzipSync } from 'fflate';
 
+declare global {
+  interface Window {
+    eruda?: {
+      init: (options?: Record<string, unknown>) => void;
+      show: () => void;
+      hide: () => void;
+      destroy: () => void;
+      _isInit?: boolean;
+    };
+  }
+}
+
 let swRegistration: ServiceWorkerRegistration | null = null;
 let currentFileMap: Record<string, Uint8Array> | null = null;
+let currentEntryPath: string = 'index.html';
 
 const dropzone = document.getElementById('dropzone') as HTMLDivElement;
 const fileInput = document.getElementById('file-input') as HTMLInputElement;
@@ -11,11 +24,38 @@ const reloadBtn = document.getElementById('reload-btn') as HTMLButtonElement;
 const fullscreenBtn = document.getElementById('fullscreen-btn') as HTMLButtonElement;
 const gameContainer = document.getElementById('game-container') as HTMLDivElement;
 const gamepadToggleBtn = document.getElementById('gamepad-toggle-btn') as HTMLButtonElement;
+const debugToggleBtn = document.getElementById('debug-toggle-btn') as HTMLButtonElement;
 const virtualGamepad = document.getElementById('virtual-gamepad') as HTMLDivElement;
 
 const baseUrl = import.meta.env.BASE_URL.endsWith('/')
   ? import.meta.env.BASE_URL
   : import.meta.env.BASE_URL + '/';
+
+let erudaActive = false;
+
+function setupErudaDevTools() {
+  if (!debugToggleBtn) return;
+
+  debugToggleBtn.addEventListener('click', () => {
+    if (!window.eruda) {
+      statusEl.textContent = 'Eruda script not loaded.';
+      return;
+    }
+
+    if (!erudaActive) {
+      if (!window.eruda._isInit) {
+        window.eruda.init();
+      }
+      window.eruda.show();
+      erudaActive = true;
+      debugToggleBtn.classList.add('active');
+    } else {
+      window.eruda.hide();
+      erudaActive = false;
+      debugToggleBtn.classList.remove('active');
+    }
+  });
+}
 
 async function registerServiceWorker() {
   if ('serviceWorker' in navigator) {
@@ -52,6 +92,72 @@ async function getActiveServiceWorker(): Promise<ServiceWorker> {
   });
 }
 
+function processExtractedFiles(unzipped: Record<string, Uint8Array>): {
+  normalizedMap: Record<string, Uint8Array>;
+  entryPath: string;
+} {
+  const filePaths = Object.keys(unzipped);
+
+  // Filter out directory entries
+  let paths = filePaths
+    .map((p) => p.replace(/\\/g, '/'))
+    .filter((p) => !p.endsWith('/'));
+
+  // Detect common root prefix iteratively
+  let commonPrefix = '';
+  while (paths.length > 0) {
+    const firstPathParts = paths[0].split('/');
+    if (firstPathParts.length <= 1) break;
+
+    const potentialPrefix = firstPathParts[0] + '/';
+    const allStartWithPrefix = paths.every(
+      (p) => p.startsWith(potentialPrefix) && p.length > potentialPrefix.length
+    );
+
+    if (allStartWithPrefix) {
+      commonPrefix += potentialPrefix;
+      paths = paths.map((p) => p.slice(potentialPrefix.length));
+    } else {
+      break;
+    }
+  }
+
+  const normalizedMap: Record<string, Uint8Array> = {};
+  for (const rawPath of filePaths) {
+    const normalizedRaw = rawPath.replace(/\\/g, '/');
+    if (normalizedRaw.endsWith('/')) continue; // Skip directory entries
+
+    let cleanPath = normalizedRaw;
+    if (commonPrefix && cleanPath.startsWith(commonPrefix)) {
+      cleanPath = cleanPath.slice(commonPrefix.length);
+    }
+    // Normalize slashes and strip leading slashes (e.g. ensure index.html, not /index.html)
+    cleanPath = cleanPath.replace(/^\/+/, '');
+    if (cleanPath) {
+      normalizedMap[cleanPath] = unzipped[rawPath];
+    }
+  }
+
+  // Find actual entry point: Look for index.html anywhere in the zip hierarchy
+  let entryPath = 'index.html';
+  if ('index.html' in normalizedMap) {
+    entryPath = 'index.html';
+  } else {
+    const keys = Object.keys(normalizedMap);
+    const exactIndex = keys.find((k) => k.toLowerCase() === 'index.html');
+    if (exactIndex) {
+      entryPath = exactIndex;
+    } else {
+      const nestedIndex = keys.find((k) => k.toLowerCase().endsWith('/index.html'));
+      if (nestedIndex) {
+        entryPath = nestedIndex;
+      }
+    }
+  }
+
+  return { normalizedMap, entryPath };
+}
+
 function processZipBuffer(arrayBuffer: ArrayBuffer) {
   statusEl.textContent = 'Unzipping archive...';
   try {
@@ -64,47 +170,30 @@ function processZipBuffer(arrayBuffer: ArrayBuffer) {
       return;
     }
 
-    // Check if all non-directory files share a common root directory
-    const paths = filePaths.filter((p) => !p.endsWith('/'));
-    let commonPrefix = '';
-    if (paths.length > 0) {
-      const firstPathParts = paths[0].split('/');
-      if (firstPathParts.length > 1) {
-        const potentialPrefix = firstPathParts[0] + '/';
-        const allStartWithPrefix = paths.every((p) => p.startsWith(potentialPrefix));
-        if (allStartWithPrefix) {
-          commonPrefix = potentialPrefix;
-        }
-      }
+    const { normalizedMap, entryPath } = processExtractedFiles(unzipped);
+
+    if (Object.keys(normalizedMap).length === 0) {
+      statusEl.textContent = 'ZIP file is empty or contains no valid files.';
+      return;
     }
 
-    const normalizedMap: Record<string, Uint8Array> = {};
-    for (const rawPath of filePaths) {
-      if (rawPath.endsWith('/')) continue; // Skip directory entries
-      let cleanPath = rawPath;
-      if (commonPrefix && cleanPath.startsWith(commonPrefix)) {
-        cleanPath = cleanPath.slice(commonPrefix.length);
-      }
-      // Normalize slashes
-      cleanPath = cleanPath.replace(/\\/g, '/').replace(/^\/+/, '');
-      normalizedMap[cleanPath] = unzipped[rawPath];
-    }
-
-    if (!('index.html' in normalizedMap)) {
-      statusEl.textContent = 'Warning: index.html not found at root of game archive.';
+    if (!(entryPath in normalizedMap)) {
+      statusEl.textContent = 'Warning: index.html not found in game archive.';
     } else {
       statusEl.textContent = 'Game extracted successfully. Launching...';
     }
 
     currentFileMap = normalizedMap;
-    loadGame(normalizedMap);
+    currentEntryPath = entryPath;
+    loadGame(normalizedMap, entryPath);
   } catch (err) {
     console.error('Error processing zip file:', err);
     statusEl.textContent = 'Failed to extract ZIP archive.';
   }
 }
 
-async function loadGame(fileMap: Record<string, Uint8Array>) {
+async function loadGame(fileMap: Record<string, Uint8Array>, entryPath: string = 'index.html') {
+  currentEntryPath = entryPath;
   const sw = await getActiveServiceWorker();
   sw.postMessage({
     type: 'SET_GAME_FILES',
@@ -113,7 +202,8 @@ async function loadGame(fileMap: Record<string, Uint8Array>) {
 
   // Small delay to ensure SW stores files before iframe fetch
   setTimeout(() => {
-    gameFrame.src = baseUrl + 'virtual-game/index.html';
+    const cleanEntry = entryPath.replace(/^\/+/, '');
+    gameFrame.src = baseUrl + 'virtual-game/' + cleanEntry;
     reloadBtn.disabled = false;
     fullscreenBtn.disabled = false;
   }, 100);
@@ -161,7 +251,7 @@ fileInput.addEventListener('change', (e) => {
 
 reloadBtn.addEventListener('click', () => {
   if (currentFileMap) {
-    loadGame(currentFileMap);
+    loadGame(currentFileMap, currentEntryPath);
   } else if (gameFrame.src) {
     gameFrame.src = gameFrame.src;
   }
@@ -293,6 +383,7 @@ function setupVirtualGamepad() {
   });
 }
 
-// Initialize Service Worker and Touch Gamepad
+// Initialize Service Worker, Eruda, and Touch Gamepad
 registerServiceWorker();
+setupErudaDevTools();
 setupVirtualGamepad();
