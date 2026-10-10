@@ -31,9 +31,11 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
-        cacheNames.map((cacheName) => {
-          if (cacheName !== SHELL_CACHE && cacheName !== GAME_CACHE) {
-            return caches.delete(cacheName);
+        cacheNames.map((key) => {
+          const isRunaWebCache = key.startsWith('runaweb-');
+          const isCurrentCache = (key === SHELL_CACHE || key === GAME_CACHE);
+          if (isRunaWebCache && !isCurrentCache) {
+            return caches.delete(key);
           }
         })
       );
