@@ -1,6 +1,8 @@
-// Service Worker for RunaWeb - Offline App Shell & Virtual Game Serving
+// Service Worker for RunaWeb - True Offline Caching & Virtual Game Storage
 
-const CACHE_NAME = 'runaweb-shell-v1';
+const CACHE_NAME = 'runaweb-shell-v2';
+const GAME_CACHE_NAME = 'runaweb-game-assets';
+
 const APP_SHELL_ASSETS = [
   './',
   './index.html',
@@ -25,7 +27,7 @@ self.addEventListener('activate', (event) => {
     caches.keys().then((cacheNames) => {
       return Promise.all(
         cacheNames.map((cacheName) => {
-          if (cacheName !== CACHE_NAME) {
+          if (cacheName !== CACHE_NAME && cacheName !== GAME_CACHE_NAME) {
             return caches.delete(cacheName);
           }
         })
@@ -34,17 +36,45 @@ self.addEventListener('activate', (event) => {
   );
 });
 
+async function saveGameAssetsToCache(files) {
+  gameFiles.clear();
+  const gameCache = await caches.open(GAME_CACHE_NAME);
+  // Clear previous game cache
+  const keys = await gameCache.keys();
+  await Promise.all(keys.map((req) => gameCache.delete(req)));
+
+  for (const path in files) {
+    if (Object.prototype.hasOwnProperty.call(files, path)) {
+      const normalizedPath = path.replace(/\\/g, '/').replace(/^\/+/, '');
+      const fileData = files[path]; // Uint8Array or ArrayBuffer
+      gameFiles.set(normalizedPath, fileData);
+
+      const mimeType = getMimeType(normalizedPath);
+      const response = new Response(fileData, {
+        status: 200,
+        headers: {
+          'Content-Type': mimeType,
+          'Content-Length': fileData.byteLength.toString(),
+          'Cache-Control': 'no-cache'
+        }
+      });
+
+      // Construct virtual asset URL
+      const virtualUrl = new URL(`virtual-game/${normalizedPath}`, self.location.origin + self.location.pathname).href;
+      await gameCache.put(virtualUrl, response);
+    }
+  }
+}
+
 self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'SET_GAME_FILES') {
-    const files = event.data.files; // object { [path: string]: Uint8Array }
-    gameFiles.clear();
-    for (const path in files) {
-      if (Object.prototype.hasOwnProperty.call(files, path)) {
-        // Normalize path: strip leading slashes and convert backslashes to forward slashes
-        const normalizedPath = path.replace(/\\/g, '/').replace(/^\/+/, '');
-        gameFiles.set(normalizedPath, files[path]);
-      }
-    }
+    event.waitUntil(saveGameAssetsToCache(event.data.files));
+  } else if (event.data && event.data.type === 'CLEAR_GAME_CACHE') {
+    event.waitUntil(
+      caches.delete(GAME_CACHE_NAME).then(() => {
+        gameFiles.clear();
+      })
+    );
   }
 });
 
@@ -91,10 +121,26 @@ self.addEventListener('fetch', (event) => {
         }
         relativePath = relativePath.replace(/^\/+/, ''); // strip leading slash
 
-        // Search for relativePath in gameFiles
-        let fileData = gameFiles.get(relativePath);
+        // 1. Check dedicated CacheStorage first
+        try {
+          const gameCache = await caches.open(GAME_CACHE_NAME);
+          const cachedMatch = await gameCache.match(event.request);
+          if (cachedMatch) {
+            return cachedMatch;
+          }
 
-        // Fallback check: if missing, try with/without leading ./ or case-insensitively
+          // Try matching virtual URL constructed from relative path
+          const virtualUrl = new URL(`virtual-game/${relativePath}`, self.location.origin + self.location.pathname).href;
+          const virtualMatch = await gameCache.match(virtualUrl);
+          if (virtualMatch) {
+            return virtualMatch;
+          }
+        } catch (e) {
+          console.warn('Error reading from GAME_CACHE_NAME:', e);
+        }
+
+        // 2. Fallback to in-memory gameFiles map
+        let fileData = gameFiles.get(relativePath);
         if (!fileData) {
           const withoutDotSlash = relativePath.replace(/^\.\//, '');
           const withDotSlash = './' + withoutDotSlash;
@@ -138,28 +184,71 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Stale-While-Revalidate / Cache-First strategy for App Shell assets
+  // Intercept App Shell / Navigation / External CDNs (Cache-First strategy)
   event.respondWith(
-    caches.match(event.request).then((cachedResponse) => {
-      const fetchPromise = fetch(event.request).then((networkResponse) => {
+    (async () => {
+      // Check cache first
+      const cachedResponse = await caches.match(event.request);
+      if (cachedResponse) {
+        // Fetch background update if online
+        fetch(event.request).then(async (networkResponse) => {
+          if (
+            networkResponse &&
+            networkResponse.status === 200 &&
+            event.request.method === 'GET' &&
+            !url.protocol.startsWith('chrome-extension')
+          ) {
+            const cache = await caches.open(CACHE_NAME);
+            await cache.put(event.request, networkResponse.clone());
+          }
+        }).catch(() => {
+          // Offline, ignore network update error
+        });
+        return cachedResponse;
+      }
+
+      // Fallback to network
+      try {
+        const networkResponse = await fetch(event.request);
         if (
           networkResponse &&
           networkResponse.status === 200 &&
           event.request.method === 'GET' &&
           !url.protocol.startsWith('chrome-extension')
         ) {
-          const responseToCache = networkResponse.clone();
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(event.request, responseToCache);
-          });
+          const cache = await caches.open(CACHE_NAME);
+          await cache.put(event.request, networkResponse.clone());
         }
         return networkResponse;
-      }).catch((err) => {
-        console.warn('SW fetch failed (offline mode):', err);
-        return cachedResponse;
-      });
+      } catch (err) {
+        console.warn('SW fetch failed (offline mode):', event.request.url, err);
 
-      return cachedResponse || fetchPromise;
-    })
+        // Fail-safe handling for external CDN or HTML requests
+        if (url.hostname.includes('cdn.jsdelivr.net') || url.hostname.includes('eruda')) {
+          return new Response('/* Eruda CDN offline fallback */', {
+            status: 200,
+            headers: { 'Content-Type': 'text/javascript' }
+          });
+        }
+        if (url.hostname.includes('fonts.googleapis.com')) {
+          return new Response('', { status: 200, headers: { 'Content-Type': 'text/css' } });
+        }
+        if (url.hostname.includes('fonts.gstatic.com')) {
+          return new Response('', { status: 200 });
+        }
+
+        // If navigation request fails, fallback to cached index.html
+        if (event.request.mode === 'navigate') {
+          const fallbackResponse = await caches.match('./index.html') || await caches.match('./');
+          if (fallbackResponse) return fallbackResponse;
+        }
+
+        return new Response('Network error and no cache available', {
+          status: 503,
+          statusText: 'Service Unavailable',
+          headers: { 'Content-Type': 'text/plain' }
+        });
+      }
+    })()
   );
 });
