@@ -1,7 +1,7 @@
-// Service Worker for RunaWeb - True Offline Caching & Virtual Game Storage
+// Service Worker for RunaWeb - Afterplay-Style Offline Architecture
 
-const CACHE_NAME = 'runaweb-shell-v2';
-const GAME_CACHE_NAME = 'runaweb-game-assets';
+const CACHE_NAME = 'runaweb-shell-v3';
+const GAME_CACHE_NAME = 'runaweb-virtual-game';
 
 const APP_SHELL_ASSETS = [
   './',
@@ -15,8 +15,13 @@ let gameFiles = new Map();
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(APP_SHELL_ASSETS);
+    caches.open(CACHE_NAME).then(async (cache) => {
+      // Pre-cache core app shell assets
+      try {
+        await cache.addAll(APP_SHELL_ASSETS);
+      } catch (err) {
+        console.warn('Failed to pre-cache some app shell assets on install:', err);
+      }
     })
   );
   self.skipWaiting();
@@ -110,7 +115,7 @@ function getMimeType(filePath) {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
-  // Match any URL containing virtual-game/
+  // Intercept /virtual-game/* requests by serving directly from caches.open('runaweb-virtual-game')
   const match = url.pathname.match(/virtual-game\/(.*)$/);
   if (match) {
     event.respondWith(
@@ -121,7 +126,7 @@ self.addEventListener('fetch', (event) => {
         }
         relativePath = relativePath.replace(/^\/+/, ''); // strip leading slash
 
-        // 1. Check dedicated CacheStorage first
+        // 1. Check dedicated CacheStorage ('runaweb-virtual-game') first
         try {
           const gameCache = await caches.open(GAME_CACHE_NAME);
           const cachedMatch = await gameCache.match(event.request);
@@ -184,30 +189,65 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Intercept App Shell / Navigation / External CDNs (Cache-First strategy)
-  event.respondWith(
-    (async () => {
-      // Check cache first
-      const cachedResponse = await caches.match(event.request);
-      if (cachedResponse) {
-        // Fetch background update if online
-        fetch(event.request).then(async (networkResponse) => {
-          if (
-            networkResponse &&
-            networkResponse.status === 200 &&
-            event.request.method === 'GET' &&
-            !url.protocol.startsWith('chrome-extension')
-          ) {
+  // Handle HTML navigation requests (`mode === 'navigate'`) -> MUST serve cached index.html when offline
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      (async () => {
+        try {
+          const networkResponse = await fetch(event.request);
+          if (networkResponse && networkResponse.status === 200) {
             const cache = await caches.open(CACHE_NAME);
             await cache.put(event.request, networkResponse.clone());
+            return networkResponse;
           }
-        }).catch(() => {
-          // Offline, ignore network update error
+        } catch (err) {
+          console.warn('Navigation fetch failed, returning cached index.html:', err);
+        }
+
+        const fallbackResponse =
+          (await caches.match('./index.html')) ||
+          (await caches.match('./')) ||
+          (await caches.match(event.request));
+
+        if (fallbackResponse) {
+          return fallbackResponse;
+        }
+
+        return new Response('Offline and no cached index.html found.', {
+          status: 503,
+          statusText: 'Service Unavailable',
+          headers: { 'Content-Type': 'text/html' }
         });
+      })()
+    );
+    return;
+  }
+
+  // Intercept App Shell / Bundles / External CDNs (Stale-While-Revalidate / Cache-First strategy)
+  event.respondWith(
+    (async () => {
+      const cachedResponse = await caches.match(event.request);
+      if (cachedResponse) {
+        // Fetch background update if online (Stale-While-Revalidate)
+        fetch(event.request)
+          .then(async (networkResponse) => {
+            if (
+              networkResponse &&
+              networkResponse.status === 200 &&
+              event.request.method === 'GET' &&
+              !url.protocol.startsWith('chrome-extension')
+            ) {
+              const cache = await caches.open(CACHE_NAME);
+              await cache.put(event.request, networkResponse.clone());
+            }
+          })
+          .catch(() => {
+            // Offline, ignore network update error
+          });
         return cachedResponse;
       }
 
-      // Fallback to network
+      // Fallback to network if not in cache
       try {
         const networkResponse = await fetch(event.request);
         if (
@@ -223,7 +263,7 @@ self.addEventListener('fetch', (event) => {
       } catch (err) {
         console.warn('SW fetch failed (offline mode):', event.request.url, err);
 
-        // Fail-safe handling for external CDN or HTML requests
+        // Fail-safe handling for external CDN or fonts
         if (url.hostname.includes('cdn.jsdelivr.net') || url.hostname.includes('eruda')) {
           return new Response('/* Eruda CDN offline fallback */', {
             status: 200,
@@ -235,12 +275,6 @@ self.addEventListener('fetch', (event) => {
         }
         if (url.hostname.includes('fonts.gstatic.com')) {
           return new Response('', { status: 200 });
-        }
-
-        // If navigation request fails, fallback to cached index.html
-        if (event.request.mode === 'navigate') {
-          const fallbackResponse = await caches.match('./index.html') || await caches.match('./');
-          if (fallbackResponse) return fallbackResponse;
         }
 
         return new Response('Network error and no cache available', {

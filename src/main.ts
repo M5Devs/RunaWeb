@@ -16,6 +16,7 @@ declare global {
 let swRegistration: ServiceWorkerRegistration | null = null;
 let currentFileMap: Record<string, Uint8Array> | null = null;
 let currentEntryPath: string = 'index.html';
+let activeGameName: string = 'active_game';
 
 const dropzone = document.getElementById('dropzone') as HTMLDivElement;
 const fileInput = document.getElementById('file-input') as HTMLInputElement;
@@ -25,13 +26,22 @@ const reloadBtn = document.getElementById('reload-btn') as HTMLButtonElement;
 const fullscreenBtn = document.getElementById('fullscreen-btn') as HTMLButtonElement;
 const exitBtn = document.getElementById('exit-btn') as HTMLButtonElement;
 const collapseBtn = document.getElementById('collapse-btn') as HTMLButtonElement;
+const floatingHudPill = document.getElementById('floating-hud-pill') as HTMLButtonElement;
 const appHeader = document.getElementById('app-header') as HTMLElement;
 const gameContainer = document.getElementById('game-container') as HTMLDivElement;
 const gamepadToggleBtn = document.getElementById('gamepad-toggle-btn') as HTMLButtonElement;
 const debugToggleBtn = document.getElementById('debug-toggle-btn') as HTMLButtonElement;
 const virtualGamepad = document.getElementById('virtual-gamepad') as HTMLDivElement;
-
 const libraryGrid = document.getElementById('library-grid') as HTMLDivElement;
+
+// Save Modal Elements
+const savesToggleBtn = document.getElementById('saves-toggle-btn') as HTMLButtonElement;
+const saveModal = document.getElementById('save-modal') as HTMLDivElement;
+const closeSaveModalBtn = document.getElementById('close-save-modal') as HTMLButtonElement;
+const exportSaveBtn = document.getElementById('export-save-btn') as HTMLButtonElement;
+const importSaveBtn = document.getElementById('import-save-btn') as HTMLButtonElement;
+const importSaveInput = document.getElementById('import-save-input') as HTMLInputElement;
+const saveModalStatus = document.getElementById('save-modal-status') as HTMLDivElement;
 
 const baseUrl = import.meta.env.BASE_URL.endsWith('/')
   ? import.meta.env.BASE_URL
@@ -53,43 +63,37 @@ function resetAutoHideTimer() {
   if (currentMode === 'theater' && !isHeaderPinned) {
     autoHideTimer = window.setTimeout(() => {
       if (currentMode === 'theater' && !isHeaderPinned) {
-        appHeader.classList.add('hud-hidden');
+        collapseHeader();
       }
-    }, 3000);
+    }, 3500);
   }
 }
 
-function showHeader() {
-  appHeader.classList.remove('hud-hidden');
+function expandHeader() {
+  appHeader.classList.remove('hud-collapsed', 'hud-hidden');
   resetAutoHideTimer();
 }
 
+function collapseHeader() {
+  appHeader.classList.add('hud-collapsed');
+}
+
 function setupHudControls() {
-  if (!collapseBtn) return;
+  if (collapseBtn) {
+    collapseBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      collapseHeader();
+    });
+  }
 
-  collapseBtn.addEventListener('click', () => {
-    if (appHeader.classList.contains('hud-hidden')) {
-      // Expand header
-      isHeaderPinned = true;
-      collapseBtn.textContent = '⌄';
-      collapseBtn.title = 'Auto-hide Header';
-      showHeader();
-    } else if (isHeaderPinned) {
-      // Unpin header -> hide immediately
-      isHeaderPinned = false;
-      collapseBtn.textContent = '⌃';
-      collapseBtn.title = 'Pin Header';
-      appHeader.classList.add('hud-hidden');
-    } else {
-      // Pin header
-      isHeaderPinned = true;
-      collapseBtn.textContent = '⌄';
-      collapseBtn.title = 'Auto-hide Header';
-      showHeader();
-    }
-  });
+  if (floatingHudPill) {
+    floatingHudPill.addEventListener('click', (e) => {
+      e.stopPropagation();
+      expandHeader();
+    });
+  }
 
-  // User activity listeners
+  // Hover or touch at top 30px edge reveals header temporarily
   const handleActivity = (e: MouseEvent | TouchEvent) => {
     if (currentMode !== 'theater') return;
 
@@ -100,9 +104,9 @@ function setupHudControls() {
       clientY = e.touches[0].clientY;
     }
 
-    if (appHeader.classList.contains('hud-hidden')) {
-      if (clientY <= 50) {
-        showHeader();
+    if (appHeader.classList.contains('hud-collapsed') || appHeader.classList.contains('hud-hidden')) {
+      if (clientY <= 30) {
+        expandHeader();
       }
     } else {
       resetAutoHideTimer();
@@ -112,7 +116,19 @@ function setupHudControls() {
   window.addEventListener('mousemove', handleActivity);
   window.addEventListener('touchstart', handleActivity, { passive: true });
 
-  // Hovering on header prevents auto-hide
+  // Clicking outside expanded header during gameplay collapses header
+  window.addEventListener('click', (e) => {
+    if (currentMode !== 'theater') return;
+    const target = e.target as Node;
+    if (
+      !appHeader.contains(target) &&
+      !floatingHudPill.contains(target) &&
+      (!saveModal || saveModal.classList.contains('hidden') || !saveModal.contains(target))
+    ) {
+      collapseHeader();
+    }
+  });
+
   appHeader.addEventListener('mouseenter', () => {
     if (autoHideTimer !== null) {
       window.clearTimeout(autoHideTimer);
@@ -133,11 +149,7 @@ function setViewMode(mode: 'hub' | 'theater') {
     if (exitBtn) exitBtn.style.display = 'inline-flex';
 
     isHeaderPinned = false;
-    if (collapseBtn) {
-      collapseBtn.textContent = '⌃';
-      collapseBtn.title = 'Pin Header';
-    }
-    showHeader();
+    expandHeader();
   } else {
     document.body.classList.remove('mode-theater');
     document.body.classList.add('mode-hub');
@@ -147,7 +159,7 @@ function setViewMode(mode: 'hub' | 'theater') {
       window.clearTimeout(autoHideTimer);
       autoHideTimer = null;
     }
-    appHeader.classList.remove('hud-hidden');
+    appHeader.classList.remove('hud-collapsed', 'hud-hidden');
 
     // Reset iframe when exiting to hub
     gameFrame.src = 'about:blank';
@@ -254,7 +266,7 @@ function processExtractedFiles(unzipped: Record<string, Uint8Array>): {
     if (commonPrefix && cleanPath.startsWith(commonPrefix)) {
       cleanPath = cleanPath.slice(commonPrefix.length);
     }
-    // Normalize slashes and strip leading slashes (e.g. ensure index.html, not /index.html)
+    // Normalize slashes and strip leading slashes
     cleanPath = cleanPath.replace(/^\/+/, '');
     if (cleanPath) {
       normalizedMap[cleanPath] = unzipped[rawPath];
@@ -327,10 +339,11 @@ function processZipBuffer(arrayBuffer: ArrayBuffer, fileName: string) {
 
     currentFileMap = normalizedMap;
     currentEntryPath = entryPath;
+    const title = extractGameTitle(normalizedMap, entryPath, fileName);
+    activeGameName = title;
     loadGame(normalizedMap, entryPath);
 
-    // Save game to IndexedDB Library
-    const title = extractGameTitle(normalizedMap, entryPath, fileName);
+    // Save game to IndexedDB Library automatically
     const gameId = fileName.toLowerCase().replace(/[^a-z0-9_-]/g, '_') + '_' + Date.now();
     const gameRecord: SavedGame = {
       id: gameId,
@@ -440,6 +453,7 @@ async function refreshGameLibrary() {
           const { normalizedMap, entryPath } = processExtractedFiles(unzipped);
           currentFileMap = normalizedMap;
           currentEntryPath = entryPath;
+          activeGameName = game.name;
           loadGame(normalizedMap, entryPath);
           statusEl.textContent = `Playing ${game.name} from library.`;
         } else {
@@ -530,6 +544,168 @@ fullscreenBtn.addEventListener('click', () => {
     }
   }
 });
+
+// --- Save State Manager System ---
+
+function getIframeLocalStorage(): Record<string, string> {
+  const storageData: Record<string, string> = {};
+  try {
+    const frameWindow = gameFrame.contentWindow;
+    if (frameWindow && frameWindow.localStorage) {
+      for (let i = 0; i < frameWindow.localStorage.length; i++) {
+        const key = frameWindow.localStorage.key(i);
+        if (key !== null) {
+          storageData[key] = frameWindow.localStorage.getItem(key) || '';
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('Could not read iframe localStorage directly, falling back to top localStorage:', err);
+  }
+
+  // Fallback / complement with top localStorage
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key !== null && !(key in storageData)) {
+        storageData[key] = localStorage.getItem(key) || '';
+      }
+    }
+  } catch (err) {
+    console.warn('Could not read top localStorage:', err);
+  }
+
+  return storageData;
+}
+
+function setIframeLocalStorage(storageData: Record<string, string>) {
+  try {
+    const frameWindow = gameFrame.contentWindow;
+    if (frameWindow && frameWindow.localStorage) {
+      frameWindow.localStorage.clear();
+      for (const [key, value] of Object.entries(storageData)) {
+        frameWindow.localStorage.setItem(key, value);
+      }
+    }
+  } catch (err) {
+    console.warn('Could not write iframe localStorage directly:', err);
+  }
+
+  try {
+    for (const [key, value] of Object.entries(storageData)) {
+      localStorage.setItem(key, value);
+    }
+  } catch (err) {
+    console.warn('Could not write top localStorage:', err);
+  }
+}
+
+function setupSaveManager() {
+  if (savesToggleBtn) {
+    savesToggleBtn.addEventListener('click', () => {
+      if (saveModal) {
+        saveModal.classList.remove('hidden');
+        if (saveModalStatus) saveModalStatus.textContent = '';
+      }
+    });
+  }
+
+  if (closeSaveModalBtn) {
+    closeSaveModalBtn.addEventListener('click', () => {
+      if (saveModal) saveModal.classList.add('hidden');
+    });
+  }
+
+  if (saveModal) {
+    saveModal.addEventListener('click', (e) => {
+      if (e.target === saveModal) {
+        saveModal.classList.add('hidden');
+      }
+    });
+  }
+
+  // Export Save Button
+  if (exportSaveBtn) {
+    exportSaveBtn.addEventListener('click', () => {
+      const storageKeys = getIframeLocalStorage();
+      const savePayload = {
+        game: activeGameName,
+        timestamp: Date.now(),
+        data: storageKeys
+      };
+
+      const jsonStr = JSON.stringify(savePayload, null, 2);
+      const blob = new Blob([jsonStr], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+
+      const sanitizedGameName = activeGameName.toLowerCase().replace(/[^a-z0-9_-]/g, '_');
+      const filename = `runaweb-${sanitizedGameName || 'game'}-save.json`;
+
+      const downloadAnchor = document.createElement('a');
+      downloadAnchor.href = url;
+      downloadAnchor.download = filename;
+      document.body.appendChild(downloadAnchor);
+      downloadAnchor.click();
+      document.body.removeChild(downloadAnchor);
+      URL.revokeObjectURL(url);
+
+      if (saveModalStatus) {
+        saveModalStatus.textContent = `Exported save for "${activeGameName}"!`;
+      }
+    });
+  }
+
+  // Import Save Button
+  if (importSaveBtn && importSaveInput) {
+    importSaveBtn.addEventListener('click', () => {
+      importSaveInput.click();
+    });
+
+    importSaveInput.addEventListener('change', (e) => {
+      const target = e.target as HTMLInputElement;
+      if (!target.files || target.files.length === 0) return;
+
+      const file = target.files[0];
+      const reader = new FileReader();
+
+      reader.onload = (event) => {
+        try {
+          const content = event.target?.result as string;
+          const parsed = JSON.parse(content);
+
+          if (!parsed || typeof parsed !== 'object' || !parsed.data) {
+            throw new Error('Invalid save file format.');
+          }
+
+          setIframeLocalStorage(parsed.data);
+
+          if (saveModalStatus) {
+            saveModalStatus.textContent = 'Save state imported successfully! Reloading frame...';
+          }
+
+          setTimeout(() => {
+            if (saveModal) saveModal.classList.add('hidden');
+            // Automatically reload game frame to pick up imported save data
+            if (currentFileMap) {
+              loadGame(currentFileMap, currentEntryPath);
+            } else if (gameFrame.src) {
+              gameFrame.src = gameFrame.src;
+            }
+          }, 600);
+
+        } catch (err) {
+          console.error('Failed to parse save file:', err);
+          if (saveModalStatus) {
+            saveModalStatus.textContent = 'Error: Invalid JSON save file.';
+          }
+        }
+      };
+
+      reader.readAsText(file);
+      importSaveInput.value = '';
+    });
+  }
+}
 
 // --- Touch Control / Virtual Gamepad Engine ---
 
@@ -647,10 +823,11 @@ function setupVirtualGamepad() {
   });
 }
 
-// Initialize Service Worker, Eruda, Touch Gamepad, HUD, and Game Library
+// Initialize Service Worker, Eruda, Touch Gamepad, HUD, Save Manager, and Game Library
 registerServiceWorker();
 setupErudaDevTools();
 setupHudControls();
+setupSaveManager();
 setupVirtualGamepad();
 refreshGameLibrary();
 
