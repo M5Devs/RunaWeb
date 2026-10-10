@@ -24,6 +24,8 @@ const gameFrame = document.getElementById('game-frame') as HTMLIFrameElement;
 const reloadBtn = document.getElementById('reload-btn') as HTMLButtonElement;
 const fullscreenBtn = document.getElementById('fullscreen-btn') as HTMLButtonElement;
 const exitBtn = document.getElementById('exit-btn') as HTMLButtonElement;
+const collapseBtn = document.getElementById('collapse-btn') as HTMLButtonElement;
+const appHeader = document.getElementById('app-header') as HTMLElement;
 const gameContainer = document.getElementById('game-container') as HTMLDivElement;
 const gamepadToggleBtn = document.getElementById('gamepad-toggle-btn') as HTMLButtonElement;
 const debugToggleBtn = document.getElementById('debug-toggle-btn') as HTMLButtonElement;
@@ -37,15 +39,115 @@ const baseUrl = import.meta.env.BASE_URL.endsWith('/')
 
 let erudaActive = false;
 
+// HUD Auto-Hide & Collapse State
+let autoHideTimer: number | null = null;
+let isHeaderPinned = false;
+let currentMode: 'hub' | 'theater' = 'hub';
+
+function resetAutoHideTimer() {
+  if (autoHideTimer !== null) {
+    window.clearTimeout(autoHideTimer);
+    autoHideTimer = null;
+  }
+
+  if (currentMode === 'theater' && !isHeaderPinned) {
+    autoHideTimer = window.setTimeout(() => {
+      if (currentMode === 'theater' && !isHeaderPinned) {
+        appHeader.classList.add('hud-hidden');
+      }
+    }, 3000);
+  }
+}
+
+function showHeader() {
+  appHeader.classList.remove('hud-hidden');
+  resetAutoHideTimer();
+}
+
+function setupHudControls() {
+  if (!collapseBtn) return;
+
+  collapseBtn.addEventListener('click', () => {
+    if (appHeader.classList.contains('hud-hidden')) {
+      // Expand header
+      isHeaderPinned = true;
+      collapseBtn.textContent = '⌄';
+      collapseBtn.title = 'Auto-hide Header';
+      showHeader();
+    } else if (isHeaderPinned) {
+      // Unpin header -> hide immediately
+      isHeaderPinned = false;
+      collapseBtn.textContent = '⌃';
+      collapseBtn.title = 'Pin Header';
+      appHeader.classList.add('hud-hidden');
+    } else {
+      // Pin header
+      isHeaderPinned = true;
+      collapseBtn.textContent = '⌄';
+      collapseBtn.title = 'Auto-hide Header';
+      showHeader();
+    }
+  });
+
+  // User activity listeners
+  const handleActivity = (e: MouseEvent | TouchEvent) => {
+    if (currentMode !== 'theater') return;
+
+    let clientY = 0;
+    if (e instanceof MouseEvent) {
+      clientY = e.clientY;
+    } else if (e.touches && e.touches.length > 0) {
+      clientY = e.touches[0].clientY;
+    }
+
+    if (appHeader.classList.contains('hud-hidden')) {
+      if (clientY <= 50) {
+        showHeader();
+      }
+    } else {
+      resetAutoHideTimer();
+    }
+  };
+
+  window.addEventListener('mousemove', handleActivity);
+  window.addEventListener('touchstart', handleActivity, { passive: true });
+
+  // Hovering on header prevents auto-hide
+  appHeader.addEventListener('mouseenter', () => {
+    if (autoHideTimer !== null) {
+      window.clearTimeout(autoHideTimer);
+      autoHideTimer = null;
+    }
+  });
+
+  appHeader.addEventListener('mouseleave', () => {
+    resetAutoHideTimer();
+  });
+}
+
 function setViewMode(mode: 'hub' | 'theater') {
+  currentMode = mode;
   if (mode === 'theater') {
     document.body.classList.remove('mode-hub');
     document.body.classList.add('mode-theater');
     if (exitBtn) exitBtn.style.display = 'inline-flex';
+
+    isHeaderPinned = false;
+    if (collapseBtn) {
+      collapseBtn.textContent = '⌃';
+      collapseBtn.title = 'Pin Header';
+    }
+    showHeader();
   } else {
     document.body.classList.remove('mode-theater');
     document.body.classList.add('mode-hub');
     if (exitBtn) exitBtn.style.display = 'none';
+
+    if (autoHideTimer !== null) {
+      window.clearTimeout(autoHideTimer);
+      autoHideTimer = null;
+    }
+    appHeader.classList.remove('hud-hidden');
 
     // Reset iframe when exiting to hub
     gameFrame.src = 'about:blank';
@@ -545,9 +647,10 @@ function setupVirtualGamepad() {
   });
 }
 
-// Initialize Service Worker, Eruda, Touch Gamepad, and Game Library
+// Initialize Service Worker, Eruda, Touch Gamepad, HUD, and Game Library
 registerServiceWorker();
 setupErudaDevTools();
+setupHudControls();
 setupVirtualGamepad();
 refreshGameLibrary();
 
