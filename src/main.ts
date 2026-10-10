@@ -10,11 +10,18 @@ const gameFrame = document.getElementById('game-frame') as HTMLIFrameElement;
 const reloadBtn = document.getElementById('reload-btn') as HTMLButtonElement;
 const fullscreenBtn = document.getElementById('fullscreen-btn') as HTMLButtonElement;
 const gameContainer = document.getElementById('game-container') as HTMLDivElement;
+const gamepadToggleBtn = document.getElementById('gamepad-toggle-btn') as HTMLButtonElement;
+const virtualGamepad = document.getElementById('virtual-gamepad') as HTMLDivElement;
+
+const baseUrl = import.meta.env.BASE_URL.endsWith('/')
+  ? import.meta.env.BASE_URL
+  : import.meta.env.BASE_URL + '/';
 
 async function registerServiceWorker() {
   if ('serviceWorker' in navigator) {
     try {
-      swRegistration = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+      const swUrl = baseUrl + 'sw.js';
+      swRegistration = await navigator.serviceWorker.register(swUrl, { scope: baseUrl });
       statusEl.textContent = 'Service Worker registered successfully.';
     } catch (error) {
       console.error('Service Worker registration failed:', error);
@@ -106,7 +113,7 @@ async function loadGame(fileMap: Record<string, Uint8Array>) {
 
   // Small delay to ensure SW stores files before iframe fetch
   setTimeout(() => {
-    gameFrame.src = '/virtual-game/index.html';
+    gameFrame.src = baseUrl + 'virtual-game/index.html';
     reloadBtn.disabled = false;
     fullscreenBtn.disabled = false;
   }, 100);
@@ -170,5 +177,122 @@ fullscreenBtn.addEventListener('click', () => {
   }
 });
 
-// Initialize Service Worker
+// --- Touch Control / Virtual Gamepad Engine ---
+
+interface KeyMapping {
+  key: string;
+  code: string;
+  keyCode: number;
+}
+
+const BUTTON_KEY_MAPPINGS: Record<string, KeyMapping[]> = {
+  ArrowUp: [{ key: 'ArrowUp', code: 'ArrowUp', keyCode: 38 }, { key: 'w', code: 'KeyW', keyCode: 87 }],
+  ArrowDown: [{ key: 'ArrowDown', code: 'ArrowDown', keyCode: 40 }, { key: 's', code: 'KeyS', keyCode: 83 }],
+  ArrowLeft: [{ key: 'ArrowLeft', code: 'ArrowLeft', keyCode: 37 }, { key: 'a', code: 'KeyA', keyCode: 65 }],
+  ArrowRight: [{ key: 'ArrowRight', code: 'ArrowRight', keyCode: 39 }, { key: 'd', code: 'KeyD', keyCode: 68 }],
+  A: [{ key: ' ', code: 'Space', keyCode: 32 }],
+  B: [{ key: 'z', code: 'KeyZ', keyCode: 90 }, { key: 'Escape', code: 'Escape', keyCode: 27 }],
+  X: [{ key: 'x', code: 'KeyX', keyCode: 88 }],
+  Y: [{ key: 'c', code: 'KeyC', keyCode: 67 }, { key: 'Enter', code: 'Enter', keyCode: 13 }],
+  SELECT: [{ key: 'Tab', code: 'Tab', keyCode: 9 }, { key: 'Shift', code: 'ShiftLeft', keyCode: 16 }],
+  START: [{ key: 'Enter', code: 'Enter', keyCode: 13 }, { key: 'p', code: 'KeyP', keyCode: 80 }]
+};
+
+function dispatchKeyEvent(type: 'keydown' | 'keyup', mapping: KeyMapping) {
+  const targetWindow = gameFrame.contentWindow;
+  const targetDocument = gameFrame.contentDocument;
+
+  if (!targetWindow || !targetDocument) return;
+
+  const eventInit: KeyboardEventInit = {
+    key: mapping.key,
+    code: mapping.code,
+    keyCode: mapping.keyCode,
+    which: mapping.keyCode,
+    bubbles: true,
+    cancelable: true,
+    composed: true,
+    view: targetWindow
+  };
+
+  const event = new KeyboardEvent(type, eventInit);
+  Object.defineProperty(event, 'keyCode', { get: () => mapping.keyCode });
+  Object.defineProperty(event, 'which', { get: () => mapping.keyCode });
+
+  targetDocument.dispatchEvent(event);
+  if (targetDocument.activeElement && targetDocument.activeElement !== targetDocument.body) {
+    targetDocument.activeElement.dispatchEvent(event);
+  } else {
+    targetWindow.dispatchEvent(event);
+  }
+}
+
+function handleButtonPress(btnKey: string, type: 'keydown' | 'keyup') {
+  const mappings = BUTTON_KEY_MAPPINGS[btnKey];
+  if (mappings) {
+    mappings.forEach((m) => dispatchKeyEvent(type, m));
+  }
+}
+
+function setupVirtualGamepad() {
+  const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+
+  if (isTouchDevice) {
+    virtualGamepad.classList.remove('hidden');
+    gamepadToggleBtn.classList.add('active');
+  }
+
+  gamepadToggleBtn.addEventListener('click', () => {
+    const isHidden = virtualGamepad.classList.toggle('hidden');
+    gamepadToggleBtn.classList.toggle('active', !isHidden);
+  });
+
+  const buttons = virtualGamepad.querySelectorAll<HTMLButtonElement>('button');
+
+  buttons.forEach((btn) => {
+    const btnKey = btn.getAttribute('data-key') || btn.getAttribute('data-button');
+    if (!btnKey) return;
+
+    // Prevent default touch behaviors (zoom, scroll, focus loss, selection)
+    const handleStart = (e: Event) => {
+      e.preventDefault();
+      btn.classList.add('pressed');
+      handleButtonPress(btnKey, 'keydown');
+    };
+
+    const handleEnd = (e: Event) => {
+      e.preventDefault();
+      btn.classList.remove('pressed');
+      handleButtonPress(btnKey, 'keyup');
+    };
+
+    btn.addEventListener('touchstart', handleStart, { passive: false });
+    btn.addEventListener('touchend', handleEnd, { passive: false });
+    btn.addEventListener('touchcancel', handleEnd, { passive: false });
+
+    // Fallback for desktop mouse testing
+    btn.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      btn.classList.add('pressed');
+      handleButtonPress(btnKey, 'keydown');
+    });
+
+    btn.addEventListener('mouseup', (e) => {
+      e.preventDefault();
+      btn.classList.remove('pressed');
+      handleButtonPress(btnKey, 'keyup');
+    });
+
+    btn.addEventListener('mouseleave', (e) => {
+      if (btn.classList.contains('pressed')) {
+        e.preventDefault();
+        btn.classList.remove('pressed');
+        handleButtonPress(btnKey, 'keyup');
+      }
+    });
+  });
+}
+
+// Initialize Service Worker and Touch Gamepad
 registerServiceWorker();
+setupVirtualGamepad();

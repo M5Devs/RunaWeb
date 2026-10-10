@@ -56,10 +56,12 @@ function getMimeType(filePath) {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
-  if (url.pathname.startsWith('/virtual-game')) {
+  // Check if pathname contains /virtual-game/ to support base path deployments (e.g. /RunaWeb/virtual-game/...)
+  const vgameIndex = url.pathname.indexOf('/virtual-game');
+  if (vgameIndex !== -1) {
     event.respondWith(
       (async () => {
-        let relativePath = url.pathname.slice('/virtual-game'.length);
+        let relativePath = url.pathname.slice(vgameIndex + '/virtual-game'.length);
         if (relativePath.startsWith('/')) {
           relativePath = relativePath.slice(1);
         }
