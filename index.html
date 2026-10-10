@@ -3,20 +3,28 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
-    <title>RunaWeb - In-Memory Game Runner</title>
+    <title>RunaWeb - Cyberpunk Game Runner</title>
     <link rel="manifest" href="manifest.json" />
-    <meta name="theme-color" content="#0f172a" />
+    <meta name="theme-color" content="#08090d" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700;800&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
     <style>
       :root {
-        --bg-color: #0b0c10;
-        --panel-bg: #1f2833;
-        --accent-cyan: #66fcf1;
-        --accent-green: #45a29e;
-        --text-color: #c5c6c7;
-        --highlight: #45a29e;
+        --bg-dark: #08090d;
+        --bg-card: rgba(255, 255, 255, 0.03);
+        --glass-bg: rgba(18, 20, 29, 0.65);
+        --glass-border: rgba(255, 255, 255, 0.08);
+        --glass-border-hover: rgba(0, 242, 254, 0.4);
+
+        --neon-cyan: #00f2fe;
+        --neon-violet: #9d4edd;
+        --neon-magenta: #f72585;
+        --neon-green: #10b981;
+        --text-primary: #f1f5f9;
+        --text-muted: #94a3b8;
         --danger: #ff0055;
-        --border-color: #334155;
       }
 
       * {
@@ -28,33 +36,53 @@
       }
 
       body {
-        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        background-color: var(--bg-color);
-        color: var(--text-color);
-        display: flex;
-        flex-direction: column;
+        font-family: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        background-color: var(--bg-dark);
+        background-image:
+          radial-gradient(circle at 15% 15%, rgba(157, 78, 221, 0.12) 0%, transparent 40%),
+          radial-gradient(circle at 85% 85%, rgba(0, 242, 254, 0.1) 0%, transparent 40%);
+        background-attachment: fixed;
+        color: var(--text-primary);
+        min-height: 100vh;
         height: 100vh;
         overflow: hidden;
+        display: flex;
+        flex-direction: column;
       }
 
+      /* Header Styles */
       header {
-        background-color: var(--panel-bg);
-        border-bottom: 2px solid var(--accent-green);
-        padding: 0.75rem 1.5rem;
+        height: 70px;
+        padding: 0 2rem;
         display: flex;
         justify-content: space-between;
         align-items: center;
-        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
-        z-index: 10;
+        background: var(--glass-bg);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        border-bottom: 1px solid var(--glass-border);
+        z-index: 100;
+        transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
       }
 
       .logo {
-        font-size: 1.5rem;
-        font-weight: bold;
-        color: var(--accent-cyan);
-        text-transform: uppercase;
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        font-size: 1.4rem;
+        font-weight: 800;
         letter-spacing: 2px;
-        text-shadow: 0 0 8px rgba(102, 252, 241, 0.4);
+        background: linear-gradient(135deg, var(--neon-cyan), var(--neon-violet));
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        text-shadow: 0 0 20px rgba(0, 242, 254, 0.3);
+      }
+
+      .logo-icon {
+        width: 32px;
+        height: 32px;
+        fill: url(#logo-grad);
+        filter: drop-shadow(0 0 8px rgba(0, 242, 254, 0.5));
       }
 
       .controls {
@@ -63,186 +91,279 @@
         align-items: center;
       }
 
+      /* Buttons */
       .btn {
-        background-color: transparent;
-        color: var(--accent-cyan);
-        border: 1px solid var(--accent-cyan);
-        padding: 0.5rem 1rem;
-        border-radius: 4px;
+        background: rgba(255, 255, 255, 0.05);
+        color: var(--text-primary);
+        border: 1px solid var(--glass-border);
+        padding: 0.5rem 1.1rem;
+        border-radius: 50px;
         cursor: pointer;
-        font-size: 0.9rem;
+        font-family: inherit;
+        font-size: 0.85rem;
         font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 1px;
-        transition: all 0.2s ease;
+        letter-spacing: 0.5px;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        transition: all 0.25s ease;
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
       }
 
-      .btn:hover:not(:disabled), .btn.active {
-        background-color: var(--accent-cyan);
-        color: var(--bg-color);
-        box-shadow: 0 0 10px rgba(102, 252, 241, 0.5);
+      .btn:hover:not(:disabled) {
+        background: rgba(0, 242, 254, 0.15);
+        border-color: var(--neon-cyan);
+        color: #ffffff;
+        box-shadow: 0 0 15px rgba(0, 242, 254, 0.3);
+        transform: translateY(-1px);
+      }
+
+      .btn:active:not(:disabled) {
+        transform: translateY(1px);
+      }
+
+      .btn.active {
+        background: linear-gradient(135deg, rgba(0, 242, 254, 0.2), rgba(157, 78, 221, 0.2));
+        border-color: var(--neon-cyan);
+        color: var(--neon-cyan);
+        box-shadow: 0 0 12px rgba(0, 242, 254, 0.4);
       }
 
       .btn:disabled {
-        opacity: 0.4;
+        opacity: 0.3;
         cursor: not-allowed;
-        border-color: var(--border-color);
-        color: var(--text-color);
+        border-color: transparent;
       }
 
+      .btn-exit {
+        background: rgba(255, 0, 85, 0.12);
+        border-color: rgba(255, 0, 85, 0.3);
+        color: #ff4d8d;
+      }
+
+      .btn-exit:hover:not(:disabled) {
+        background: rgba(255, 0, 85, 0.25);
+        border-color: var(--danger);
+        color: #fff;
+        box-shadow: 0 0 15px rgba(255, 0, 85, 0.4);
+      }
+
+      /* Layout Container */
       main {
         flex: 1;
+        position: relative;
+        overflow: hidden;
         display: flex;
         flex-direction: column;
+      }
+
+      /* HUB VIEW STATE */
+      body.mode-hub #game-container {
+        display: none !important;
+      }
+
+      body.mode-hub .hub-view {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        padding: 2rem;
+        gap: 2rem;
+        overflow-y: auto;
+        max-width: 1300px;
+        margin: 0 auto;
+        width: 100%;
+      }
+
+      /* Hero Dropzone */
+      .dropzone-wrapper {
         position: relative;
-        padding: 0.5rem;
-        gap: 0.5rem;
-        height: calc(100vh - 60px);
+        border-radius: 24px;
+        padding: 2px;
+        background: linear-gradient(135deg, var(--neon-cyan), var(--neon-violet), var(--neon-magenta));
+        background-size: 200% 200%;
+        animation: gradientGlow 6s ease infinite;
+        box-shadow: 0 10px 30px -10px rgba(0, 242, 254, 0.2);
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
+      }
+
+      @keyframes gradientGlow {
+        0% { background-position: 0% 50%; }
+        50% { background-position: 100% 50%; }
+        100% { background-position: 0% 50%; }
       }
 
       #dropzone {
-        border: 2px dashed var(--accent-green);
-        border-radius: 8px;
-        background-color: rgba(31, 40, 51, 0.5);
+        background: rgba(12, 14, 22, 0.85);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        border-radius: 22px;
+        padding: 3rem 2rem;
         display: flex;
         flex-direction: column;
-        justify-content: center;
         align-items: center;
-        padding: 1rem;
+        justify-content: center;
         text-align: center;
-        transition: all 0.3s ease;
         cursor: pointer;
+        transition: all 0.3s ease;
+      }
+
+      .dropzone-wrapper:hover, #dropzone.dragover {
+        transform: scale(1.01);
+        box-shadow: 0 15px 40px -5px rgba(0, 242, 254, 0.35);
       }
 
       #dropzone.dragover {
-        border-color: var(--accent-cyan);
-        background-color: rgba(102, 252, 241, 0.1);
-        box-shadow: inset 0 0 15px rgba(102, 252, 241, 0.2);
+        background: rgba(0, 242, 254, 0.08);
       }
 
-      #dropzone p {
-        font-size: 1rem;
+      .dropzone-icon {
+        width: 64px;
+        height: 64px;
+        margin-bottom: 1.25rem;
+        color: var(--neon-cyan);
+        filter: drop-shadow(0 0 12px rgba(0, 242, 254, 0.4));
+        transition: transform 0.3s ease;
+      }
+
+      .dropzone-wrapper:hover .dropzone-icon {
+        transform: translateY(-4px) scale(1.05);
+      }
+
+      .dropzone-title {
+        font-size: 1.4rem;
+        font-weight: 700;
         margin-bottom: 0.5rem;
+        color: #ffffff;
+      }
+
+      .dropzone-subtitle {
+        font-size: 0.95rem;
+        color: var(--text-muted);
+        margin-bottom: 1.5rem;
       }
 
       #file-input {
         display: none;
       }
 
-      .file-select-label {
-        background-color: var(--accent-green);
-        color: var(--bg-color);
-        padding: 0.5rem 1rem;
-        border-radius: 4px;
-        font-weight: bold;
-        cursor: pointer;
-        transition: background-color 0.2s;
-      }
-
-      .file-select-label:hover {
-        background-color: var(--accent-cyan);
-      }
-
-      #game-container {
-        flex: 1;
-        width: 100%;
-        height: 100%;
-        background-color: #000;
-        border-radius: 8px;
-        overflow: hidden;
-        border: 1px solid var(--border-color);
-        position: relative;
-        display: flex;
-      }
-
-      /* Collapsible Game Library Drawer */
-      #library-container {
-        background: rgba(31, 40, 51, 0.6);
-        backdrop-filter: blur(10px);
-        -webkit-backdrop-filter: blur(10px);
-        border: 1px solid var(--border-color);
-        border-radius: 8px;
-        overflow: hidden;
-        transition: all 0.3s ease;
-      }
-
-      .library-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 0.6rem 1rem;
-        background: rgba(11, 12, 16, 0.5);
-        cursor: pointer;
-        user-select: none;
-      }
-
-      .library-title {
+      .file-select-btn {
+        background: linear-gradient(135deg, var(--neon-cyan), var(--neon-violet));
+        color: #000;
         font-weight: 700;
-        font-size: 0.95rem;
-        color: var(--accent-cyan);
-        letter-spacing: 1px;
-        display: flex;
+        padding: 0.75rem 1.75rem;
+        border-radius: 50px;
+        cursor: pointer;
+        box-shadow: 0 4px 15px rgba(0, 242, 254, 0.3);
+        transition: all 0.25s ease;
+        display: inline-flex;
         align-items: center;
         gap: 0.5rem;
       }
 
-      .library-toggle-icon {
-        transition: transform 0.3s ease;
-        font-size: 0.8rem;
-        color: var(--accent-green);
+      .file-select-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(0, 242, 254, 0.5);
       }
 
-      #library-container.collapsed .library-toggle-icon {
-        transform: rotate(-90deg);
+      #status {
+        margin-top: 1rem;
+        font-size: 0.9rem;
+        font-weight: 600;
+        color: var(--neon-cyan);
+        min-height: 1.2rem;
       }
 
-      #library-content {
-        max-height: 220px;
-        overflow-y: auto;
-        padding: 0.75rem;
-        transition: max-height 0.3s ease, padding 0.3s ease;
+      /* Saved Games Library Grid */
+      .library-section {
+        display: flex;
+        flex-direction: column;
+        gap: 1.25rem;
       }
 
-      #library-container.collapsed #library-content {
-        max-height: 0;
-        padding-top: 0;
-        padding-bottom: 0;
-        overflow: hidden;
+      .library-section-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+
+      .library-section-title {
+        font-size: 1.25rem;
+        font-weight: 700;
+        letter-spacing: 0.5px;
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+        color: #ffffff;
       }
 
       .library-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-        gap: 0.75rem;
+        grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+        gap: 1.25rem;
       }
 
+      /* Modern Retro Game Card */
       .game-card {
-        background: rgba(15, 23, 42, 0.7);
-        border: 1px solid var(--accent-green);
-        border-radius: 6px;
-        padding: 0.75rem;
+        background: var(--glass-bg);
+        border: 1px solid var(--glass-border);
+        border-radius: 16px;
+        padding: 1.25rem;
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
         display: flex;
         flex-direction: column;
         justify-content: space-between;
-        gap: 0.5rem;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-        transition: transform 0.2s ease, border-color 0.2s ease;
+        gap: 1rem;
+        position: relative;
+        overflow: hidden;
+        transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+
+      .game-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 3px;
+        background: linear-gradient(90deg, var(--neon-cyan), var(--neon-violet));
+        opacity: 0;
+        transition: opacity 0.3s ease;
       }
 
       .game-card:hover {
-        border-color: var(--accent-cyan);
-        transform: translateY(-2px);
+        border-color: var(--glass-border-hover);
+        transform: translateY(-4px);
+        box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5), 0 0 20px rgba(0, 242, 254, 0.15);
+      }
+
+      .game-card:hover::before {
+        opacity: 1;
+      }
+
+      .game-card-icon-wrapper {
+        width: 44px;
+        height: 44px;
+        border-radius: 12px;
+        background: rgba(0, 242, 254, 0.1);
+        border: 1px solid rgba(0, 242, 254, 0.2);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--neon-cyan);
+        margin-bottom: 0.5rem;
       }
 
       .game-card-info {
         display: flex;
         flex-direction: column;
-        gap: 0.2rem;
+        gap: 0.3rem;
       }
 
       .game-card-title {
-        font-weight: 600;
-        font-size: 0.9rem;
+        font-weight: 700;
+        font-size: 1.05rem;
         color: #ffffff;
         white-space: nowrap;
         overflow: hidden;
@@ -250,57 +371,110 @@
       }
 
       .game-card-meta {
-        font-size: 0.75rem;
-        color: var(--text-color);
-        opacity: 0.8;
+        font-size: 0.8rem;
+        color: var(--text-muted);
       }
 
       .game-card-actions {
         display: flex;
-        gap: 0.5rem;
-        margin-top: 0.25rem;
+        gap: 0.6rem;
+        margin-top: 0.5rem;
       }
 
       .btn-play {
         flex: 1;
-        background-color: var(--accent-green);
-        color: var(--bg-color);
-        border: none;
-        padding: 0.35rem 0.6rem;
-        border-radius: 4px;
+        background: linear-gradient(135deg, rgba(0, 242, 254, 0.15), rgba(157, 78, 221, 0.15));
+        border: 1px solid var(--neon-cyan);
+        color: var(--neon-cyan);
+        padding: 0.5rem 0.8rem;
+        border-radius: 50px;
         font-weight: 700;
-        font-size: 0.8rem;
+        font-size: 0.85rem;
         cursor: pointer;
-        transition: background-color 0.2s ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.4rem;
+        transition: all 0.25s ease;
       }
 
       .btn-play:hover {
-        background-color: var(--accent-cyan);
+        background: var(--neon-cyan);
+        color: #000;
+        box-shadow: 0 0 15px rgba(0, 242, 254, 0.4);
       }
 
       .btn-delete {
-        background-color: transparent;
-        color: var(--danger);
-        border: 1px solid var(--danger);
-        padding: 0.35rem 0.6rem;
-        border-radius: 4px;
-        font-weight: 600;
-        font-size: 0.8rem;
+        background: rgba(255, 0, 85, 0.08);
+        border: 1px solid rgba(255, 0, 85, 0.25);
+        color: rgba(255, 255, 255, 0.7);
+        padding: 0.5rem;
+        border-radius: 50px;
+        width: 36px;
+        height: 36px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
         cursor: pointer;
-        transition: all 0.2s ease;
+        transition: all 0.25s ease;
       }
 
       .btn-delete:hover {
-        background-color: var(--danger);
+        background: var(--danger);
+        border-color: var(--danger);
         color: #ffffff;
+        box-shadow: 0 0 12px rgba(255, 0, 85, 0.4);
       }
 
       .library-empty {
+        grid-column: 1 / -1;
+        background: var(--glass-bg);
+        border: 1px dashed var(--glass-border);
+        border-radius: 16px;
+        padding: 3rem;
         text-align: center;
-        font-size: 0.85rem;
-        color: var(--text-color);
-        opacity: 0.7;
-        padding: 1rem 0;
+        color: var(--text-muted);
+        font-size: 0.95rem;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.75rem;
+      }
+
+      .library-empty-icon {
+        font-size: 2.5rem;
+      }
+
+      /* PLAYING / THEATER VIEW STATE */
+      body.mode-theater {
+        background: #000;
+      }
+
+      body.mode-theater .hub-view {
+        display: none !important;
+      }
+
+      body.mode-theater header {
+        position: absolute;
+        top: 15px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: calc(100% - 40px);
+        max-width: 1100px;
+        height: 56px;
+        padding: 0 1.25rem;
+        border-radius: 50px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+        background: rgba(10, 12, 18, 0.75);
+      }
+
+      #game-container {
+        width: 100vw;
+        height: 100vh;
+        background-color: #000;
+        position: relative;
+        display: flex;
       }
 
       #game-frame {
@@ -310,50 +484,47 @@
         background-color: #000;
       }
 
-      #status {
-        font-size: 0.85rem;
-        color: var(--accent-cyan);
-        margin-top: 0.5rem;
-      }
-
-      /* Cyberpunk/Retro Glassmorphic Virtual Gamepad Overlay Styles */
+      /* Cyberpunk Glassmorphic Virtual Gamepad Overlay */
       #virtual-gamepad {
         position: absolute;
-        bottom: 10px;
-        left: 10px;
-        right: 10px;
+        bottom: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: calc(100% - 40px);
+        max-width: 600px;
         pointer-events: none;
         display: flex;
         justify-content: space-between;
         align-items: flex-end;
         z-index: 100;
-        padding: 10px;
+        padding: 16px 24px;
 
-        background: rgba(11, 12, 16, 0.4);
-        backdrop-filter: blur(8px);
-        -webkit-backdrop-filter: blur(8px);
-        border: 1px solid rgba(102, 252, 241, 0.25);
-        border-radius: 16px;
-        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5), inset 0 0 12px rgba(102, 252, 241, 0.1);
-        transition: opacity 0.3s ease, visibility 0.3s ease;
+        background: rgba(10, 12, 18, 0.65);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        border: 1px solid rgba(0, 242, 254, 0.2);
+        border-radius: 28px;
+        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6), inset 0 0 15px rgba(0, 242, 254, 0.08);
+        transition: opacity 0.3s ease, visibility 0.3s ease, transform 0.3s ease;
       }
 
       #virtual-gamepad.hidden {
         opacity: 0;
         visibility: hidden;
         pointer-events: none;
+        transform: translate(-50%, 20px);
       }
 
       #virtual-gamepad button {
         pointer-events: auto;
         touch-action: manipulation;
         font-family: inherit;
-        font-weight: bold;
-        color: var(--accent-cyan);
-        background: rgba(31, 40, 51, 0.6);
-        border: 2px solid var(--accent-cyan);
+        font-weight: 700;
+        color: var(--neon-cyan);
+        background: rgba(255, 255, 255, 0.05);
+        border: 1.5px solid var(--neon-cyan);
         border-radius: 50%;
-        box-shadow: 0 0 8px rgba(102, 252, 241, 0.3);
+        box-shadow: 0 0 10px rgba(0, 242, 254, 0.2);
         display: flex;
         justify-content: center;
         align-items: center;
@@ -361,198 +532,232 @@
       }
 
       #virtual-gamepad button:active, #virtual-gamepad button.pressed {
-        background: var(--accent-cyan);
-        color: var(--bg-color);
-        box-shadow: 0 0 15px var(--accent-cyan);
+        background: var(--neon-cyan);
+        color: var(--bg-dark);
+        box-shadow: 0 0 20px var(--neon-cyan);
         transform: scale(0.92);
       }
 
       /* D-Pad Section */
       .dpad-container {
         position: relative;
-        width: 140px;
-        height: 140px;
+        width: 130px;
+        height: 130px;
       }
 
       .dpad-btn {
         position: absolute;
-        width: 44px;
-        height: 44px;
-        border-radius: 8px !important;
-        font-size: 1.2rem;
+        width: 42px;
+        height: 42px;
+        border-radius: 10px !important;
+        font-size: 1.1rem;
       }
 
-      .dpad-btn[data-key="ArrowUp"] {
-        top: 0;
-        left: 48px;
-      }
+      .dpad-btn[data-key="ArrowUp"] { top: 0; left: 44px; }
+      .dpad-btn[data-key="ArrowDown"] { bottom: 0; left: 44px; }
+      .dpad-btn[data-key="ArrowLeft"] { top: 44px; left: 0; }
+      .dpad-btn[data-key="ArrowRight"] { top: 44px; right: 0; }
 
-      .dpad-btn[data-key="ArrowDown"] {
-        bottom: 0;
-        left: 48px;
-      }
-
-      .dpad-btn[data-key="ArrowLeft"] {
-        top: 48px;
-        left: 0;
-      }
-
-      .dpad-btn[data-key="ArrowRight"] {
-        top: 48px;
-        right: 0;
-      }
-
-      /* Center Option Buttons (Start / Select) */
+      /* Center Option Buttons */
       .center-container {
         display: flex;
-        gap: 12px;
+        gap: 10px;
         align-self: flex-end;
-        margin-bottom: 8px;
+        margin-bottom: 6px;
       }
 
       .center-btn {
-        width: 60px !important;
-        height: 28px !important;
-        border-radius: 14px !important;
-        font-size: 0.7rem;
+        width: 58px !important;
+        height: 26px !important;
+        border-radius: 13px !important;
+        font-size: 0.65rem;
         letter-spacing: 1px;
         text-transform: uppercase;
-        border-color: var(--accent-green) !important;
-        color: var(--accent-green) !important;
+        border-color: var(--neon-violet) !important;
+        color: var(--neon-violet) !important;
       }
 
       .center-btn:active, .center-btn.pressed {
-        background: var(--accent-green) !important;
-        color: var(--bg-color) !important;
-        box-shadow: 0 0 12px var(--accent-green) !important;
+        background: var(--neon-violet) !important;
+        color: #fff !important;
+        box-shadow: 0 0 15px var(--neon-violet) !important;
       }
 
       /* Action Buttons Section (X/Y/A/B) */
       .actions-container {
         position: relative;
-        width: 140px;
-        height: 140px;
+        width: 130px;
+        height: 130px;
       }
 
       .action-btn {
         position: absolute;
-        width: 44px;
-        height: 44px;
-        font-size: 1.1rem;
+        width: 42px;
+        height: 42px;
+        font-size: 1rem;
       }
 
       .action-btn[data-button="Y"] {
         top: 0;
-        left: 48px;
+        left: 44px;
         border-color: #ffbd59 !important;
         color: #ffbd59 !important;
       }
 
       .action-btn[data-button="Y"]:active, .action-btn[data-button="Y"].pressed {
         background: #ffbd59 !important;
-        color: var(--bg-color) !important;
-        box-shadow: 0 0 12px #ffbd59 !important;
+        color: var(--bg-dark) !important;
+        box-shadow: 0 0 15px #ffbd59 !important;
       }
 
       .action-btn[data-button="X"] {
-        top: 48px;
+        top: 44px;
         left: 0;
-        border-color: var(--accent-cyan) !important;
-        color: var(--accent-cyan) !important;
+        border-color: var(--neon-cyan) !important;
+        color: var(--neon-cyan) !important;
       }
 
       .action-btn[data-button="B"] {
-        top: 48px;
+        top: 44px;
         right: 0;
-        border-color: var(--danger) !important;
-        color: var(--danger) !important;
+        border-color: var(--neon-magenta) !important;
+        color: var(--neon-magenta) !important;
       }
 
       .action-btn[data-button="B"]:active, .action-btn[data-button="B"].pressed {
-        background: var(--danger) !important;
+        background: var(--neon-magenta) !important;
         color: #fff !important;
-        box-shadow: 0 0 12px var(--danger) !important;
+        box-shadow: 0 0 15px var(--neon-magenta) !important;
       }
 
       .action-btn[data-button="A"] {
         bottom: 0;
-        left: 48px;
-        border-color: #50fa7b !important;
-        color: #50fa7b !important;
+        left: 44px;
+        border-color: var(--neon-green) !important;
+        color: var(--neon-green) !important;
       }
 
       .action-btn[data-button="A"]:active, .action-btn[data-button="A"].pressed {
-        background: #50fa7b !important;
-        color: var(--bg-color) !important;
-        box-shadow: 0 0 12px #50fa7b !important;
+        background: var(--neon-green) !important;
+        color: var(--bg-dark) !important;
+        box-shadow: 0 0 15px var(--neon-green) !important;
       }
 
       @media (max-width: 600px) {
+        body.mode-hub .hub-view {
+          padding: 1rem;
+          gap: 1.25rem;
+        }
+
+        #dropzone {
+          padding: 2rem 1rem;
+        }
+
+        .dropzone-title {
+          font-size: 1.15rem;
+        }
+
+        #virtual-gamepad {
+          width: calc(100% - 20px);
+          padding: 12px;
+        }
+
         .dpad-container, .actions-container {
-          width: 120px;
-          height: 120px;
+          width: 110px;
+          height: 110px;
         }
 
         .dpad-btn, .action-btn {
-          width: 38px;
-          height: 38px;
+          width: 36px;
+          height: 36px;
         }
 
-        .dpad-btn[data-key="ArrowUp"], .action-btn[data-button="Y"] {
-          left: 41px;
-        }
-
-        .dpad-btn[data-key="ArrowDown"], .action-btn[data-button="A"] {
-          left: 41px;
-        }
-
-        .dpad-btn[data-key="ArrowLeft"], .action-btn[data-button="X"] {
-          top: 41px;
-        }
-
-        .dpad-btn[data-key="ArrowRight"], .action-btn[data-button="B"] {
-          top: 41px;
-        }
+        .dpad-btn[data-key="ArrowUp"], .action-btn[data-button="Y"] { left: 37px; }
+        .dpad-btn[data-key="ArrowDown"], .action-btn[data-button="A"] { left: 37px; }
+        .dpad-btn[data-key="ArrowLeft"], .action-btn[data-button="X"] { top: 37px; }
+        .dpad-btn[data-key="ArrowRight"], .action-btn[data-button="B"] { top: 37px; }
 
         .center-btn {
-          width: 50px !important;
-          height: 24px !important;
-          font-size: 0.6rem;
+          width: 48px !important;
+          height: 22px !important;
+          font-size: 0.55rem;
         }
       }
     </style>
   </head>
-  <body>
+  <body class="mode-hub">
+    <!-- SVG Gradients Definition -->
+    <svg width="0" height="0" style="position:absolute;">
+      <defs>
+        <linearGradient id="logo-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#00f2fe" />
+          <stop offset="100%" stop-color="#9d4edd" />
+        </linearGradient>
+      </defs>
+    </svg>
+
     <header>
-      <div class="logo">⚡ RUNAWEB</div>
+      <div class="logo">
+        <svg class="logo-icon" viewBox="0 0 24 24">
+          <path d="M21 6H3c-1.1 0-2 .9-2 2v8c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-10 7H9v2H7v-2H5v-2h2V9h2v2h2v2zm4.5 1c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm3-3c-.83 0-1.5-.67-1.5-1.5S17.67 9 18.5 9s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/>
+        </svg>
+        RUNAWEB
+      </div>
       <div class="controls">
-        <button id="debug-toggle-btn" class="btn" title="Toggle Eruda Mobile DevTools">🐛 Debug</button>
-        <button id="gamepad-toggle-btn" class="btn" title="Toggle Virtual Gamepad">🎮 Gamepad</button>
-        <button id="reload-btn" class="btn" disabled>Reload</button>
-        <button id="fullscreen-btn" class="btn" disabled>Fullscreen</button>
+        <button id="debug-toggle-btn" class="btn" title="Toggle Eruda Mobile DevTools">
+          🐛 Debug
+        </button>
+        <button id="gamepad-toggle-btn" class="btn" title="Toggle Virtual Gamepad">
+          🎮 Gamepad
+        </button>
+        <button id="reload-btn" class="btn" disabled title="Reload Game">
+          🔄 Reload
+        </button>
+        <button id="fullscreen-btn" class="btn" disabled title="Toggle Fullscreen">
+          ⛶ Fullscreen
+        </button>
+        <button id="exit-btn" class="btn btn-exit" style="display: none;" title="Exit to Library">
+          ✕ Exit
+        </button>
       </div>
     </header>
 
     <main>
-      <!-- Saved Games Library Drawer -->
-      <div id="library-container">
-        <div class="library-header" id="library-header">
-          <div class="library-title">📚 Saved Games Library</div>
-          <span class="library-toggle-icon" id="library-toggle-icon">▼</span>
-        </div>
-        <div id="library-content">
-          <div class="library-grid" id="library-grid">
-            <div class="library-empty">No saved games in local library. Upload a .zip game above!</div>
+      <!-- Hub / Home View State -->
+      <div class="hub-view">
+        <!-- Futuristic Hero Dropzone -->
+        <div class="dropzone-wrapper">
+          <div id="dropzone">
+            <svg class="dropzone-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+            </svg>
+            <h2 class="dropzone-title">Drop HTML5 Game (.zip) Here</h2>
+            <p class="dropzone-subtitle">Instant, high-performance in-memory execution</p>
+            <label for="file-input" class="file-select-btn">
+              <span>Select ZIP File</span>
+            </label>
+            <input type="file" id="file-input" accept=".zip" />
+            <div id="status"></div>
           </div>
         </div>
-      </div>
-      <div id="dropzone">
-        <p>🎮 Drag & Drop HTML5 Game (.zip) Here or Click to Select</p>
-        <label for="file-input" class="file-select-label">Choose ZIP File</label>
-        <input type="file" id="file-input" accept=".zip" />
-        <div id="status"></div>
+
+        <!-- Saved Games Library Section -->
+        <section class="library-section">
+          <div class="library-section-header">
+            <h3 class="library-section-title">
+              <span>👾</span> Arcade Shelf
+            </h3>
+          </div>
+          <div class="library-grid" id="library-grid">
+            <div class="library-empty">
+              <span class="library-empty-icon">👾</span>
+              <p>Your arcade shelf is empty! Drop a game to start your collection.</p>
+            </div>
+          </div>
+        </section>
       </div>
 
+      <!-- Theater / Game Playing State Container -->
       <div id="game-container">
         <iframe
           id="game-frame"
