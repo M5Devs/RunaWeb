@@ -1,4 +1,5 @@
 import { unzipSync } from 'fflate';
+import { saveGame, getSavedGames, loadGameById, deleteGame, SavedGame } from './storage';
 
 declare global {
   interface Window {
@@ -26,6 +27,10 @@ const gameContainer = document.getElementById('game-container') as HTMLDivElemen
 const gamepadToggleBtn = document.getElementById('gamepad-toggle-btn') as HTMLButtonElement;
 const debugToggleBtn = document.getElementById('debug-toggle-btn') as HTMLButtonElement;
 const virtualGamepad = document.getElementById('virtual-gamepad') as HTMLDivElement;
+
+const libraryContainer = document.getElementById('library-container') as HTMLDivElement;
+const libraryHeader = document.getElementById('library-header') as HTMLDivElement;
+const libraryGrid = document.getElementById('library-grid') as HTMLDivElement;
 
 const baseUrl = import.meta.env.BASE_URL.endsWith('/')
   ? import.meta.env.BASE_URL
@@ -158,7 +163,26 @@ function processExtractedFiles(unzipped: Record<string, Uint8Array>): {
   return { normalizedMap, entryPath };
 }
 
-function processZipBuffer(arrayBuffer: ArrayBuffer) {
+function extractGameTitle(normalizedMap: Record<string, Uint8Array>, entryPath: string, defaultName: string): string {
+  try {
+    const entryData = normalizedMap[entryPath];
+    if (entryData) {
+      const htmlText = new TextDecoder('utf-8').decode(entryData);
+      const titleMatch = htmlText.match(/<title[^>]*>([^<]+)<\/title>/i);
+      if (titleMatch && titleMatch[1].trim()) {
+        const extracted = titleMatch[1].trim();
+        if (extracted !== 'Document' && extracted !== 'Untitled') {
+          return extracted;
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('Failed to extract title from index.html:', err);
+  }
+  return defaultName.replace(/\.zip$/i, '');
+}
+
+function processZipBuffer(arrayBuffer: ArrayBuffer, fileName: string) {
   statusEl.textContent = 'Unzipping archive...';
   try {
     const uint8Array = new Uint8Array(arrayBuffer);
@@ -186,6 +210,22 @@ function processZipBuffer(arrayBuffer: ArrayBuffer) {
     currentFileMap = normalizedMap;
     currentEntryPath = entryPath;
     loadGame(normalizedMap, entryPath);
+
+    // Save game to IndexedDB Library
+    const title = extractGameTitle(normalizedMap, entryPath, fileName);
+    const gameId = fileName.toLowerCase().replace(/[^a-z0-9_-]/g, '_') + '_' + Date.now();
+    const gameRecord: SavedGame = {
+      id: gameId,
+      name: title,
+      date: Date.now(),
+      zipData: arrayBuffer,
+      size: arrayBuffer.byteLength
+    };
+
+    saveGame(gameRecord)
+      .then(() => refreshGameLibrary())
+      .catch((err) => console.error('Failed to save game to IndexedDB:', err));
+
   } catch (err) {
     console.error('Error processing zip file:', err);
     statusEl.textContent = 'Failed to extract ZIP archive.';
@@ -209,6 +249,98 @@ async function loadGame(fileMap: Record<string, Uint8Array>, entryPath: string =
   }, 100);
 }
 
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+async function refreshGameLibrary() {
+  if (!libraryGrid) return;
+
+  try {
+    const games = await getSavedGames();
+    libraryGrid.innerHTML = '';
+
+    if (games.length === 0) {
+      libraryGrid.innerHTML = '<div class="library-empty">No saved games in local library. Upload a .zip game above!</div>';
+      return;
+    }
+
+    // Sort newest first
+    games.sort((a, b) => b.date - a.date);
+
+    games.forEach((game) => {
+      const card = document.createElement('div');
+      card.className = 'game-card';
+
+      const formattedDate = new Date(game.date).toLocaleDateString(undefined, {
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+
+      card.innerHTML = `
+        <div class="game-card-info">
+          <div class="game-card-title" title="${game.name}">${game.name}</div>
+          <div class="game-card-meta">${formatBytes(game.size)} • ${formattedDate}</div>
+        </div>
+        <div class="game-card-actions">
+          <button class="btn-play" data-id="${game.id}">▶ Play</button>
+          <button class="btn-delete" data-id="${game.id}">🗑 Delete</button>
+        </div>
+      `;
+
+      libraryGrid.appendChild(card);
+    });
+
+    // Attach click event handlers
+    const playButtons = libraryGrid.querySelectorAll<HTMLButtonElement>('.btn-play');
+    playButtons.forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const id = btn.getAttribute('data-id');
+        if (!id) return;
+        statusEl.textContent = 'Loading game from local library...';
+        const game = await loadGameById(id);
+        if (game) {
+          const uint8Array = new Uint8Array(game.zipData);
+          const unzipped = unzipSync(uint8Array);
+          const { normalizedMap, entryPath } = processExtractedFiles(unzipped);
+          currentFileMap = normalizedMap;
+          currentEntryPath = entryPath;
+          loadGame(normalizedMap, entryPath);
+          statusEl.textContent = `Playing ${game.name} from library.`;
+        } else {
+          statusEl.textContent = 'Failed to find game in storage.';
+        }
+      });
+    });
+
+    const deleteButtons = libraryGrid.querySelectorAll<HTMLButtonElement>('.btn-delete');
+    deleteButtons.forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const id = btn.getAttribute('data-id');
+        if (!id) return;
+        await deleteGame(id);
+        refreshGameLibrary();
+      });
+    });
+
+  } catch (err) {
+    console.error('Failed to fetch saved games:', err);
+  }
+}
+
+function setupLibraryUI() {
+  if (libraryHeader && libraryContainer) {
+    libraryHeader.addEventListener('click', () => {
+      libraryContainer.classList.toggle('collapsed');
+    });
+  }
+  refreshGameLibrary();
+}
+
 function handleFileSelect(file: File) {
   if (!file.name.toLowerCase().endsWith('.zip')) {
     statusEl.textContent = 'Please select a valid .zip file.';
@@ -218,7 +350,7 @@ function handleFileSelect(file: File) {
   const reader = new FileReader();
   reader.onload = (e) => {
     if (e.target?.result) {
-      processZipBuffer(e.target.result as ArrayBuffer);
+      processZipBuffer(e.target.result as ArrayBuffer, file.name);
     }
   };
   reader.readAsArrayBuffer(file);
@@ -383,7 +515,8 @@ function setupVirtualGamepad() {
   });
 }
 
-// Initialize Service Worker, Eruda, and Touch Gamepad
+// Initialize Service Worker, Eruda, Touch Gamepad, and Game Library
 registerServiceWorker();
 setupErudaDevTools();
 setupVirtualGamepad();
+setupLibraryUI();

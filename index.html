@@ -4,6 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
     <title>RunaWeb - In-Memory Game Runner</title>
+    <link rel="manifest" href="manifest.json" />
+    <meta name="theme-color" content="#0f172a" />
     <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
     <style>
       :root {
@@ -151,6 +153,154 @@
         border: 1px solid var(--border-color);
         position: relative;
         display: flex;
+      }
+
+      /* Collapsible Game Library Drawer */
+      #library-container {
+        background: rgba(31, 40, 51, 0.6);
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        overflow: hidden;
+        transition: all 0.3s ease;
+      }
+
+      .library-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0.6rem 1rem;
+        background: rgba(11, 12, 16, 0.5);
+        cursor: pointer;
+        user-select: none;
+      }
+
+      .library-title {
+        font-weight: 700;
+        font-size: 0.95rem;
+        color: var(--accent-cyan);
+        letter-spacing: 1px;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+
+      .library-toggle-icon {
+        transition: transform 0.3s ease;
+        font-size: 0.8rem;
+        color: var(--accent-green);
+      }
+
+      #library-container.collapsed .library-toggle-icon {
+        transform: rotate(-90deg);
+      }
+
+      #library-content {
+        max-height: 220px;
+        overflow-y: auto;
+        padding: 0.75rem;
+        transition: max-height 0.3s ease, padding 0.3s ease;
+      }
+
+      #library-container.collapsed #library-content {
+        max-height: 0;
+        padding-top: 0;
+        padding-bottom: 0;
+        overflow: hidden;
+      }
+
+      .library-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+        gap: 0.75rem;
+      }
+
+      .game-card {
+        background: rgba(15, 23, 42, 0.7);
+        border: 1px solid var(--accent-green);
+        border-radius: 6px;
+        padding: 0.75rem;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        gap: 0.5rem;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        transition: transform 0.2s ease, border-color 0.2s ease;
+      }
+
+      .game-card:hover {
+        border-color: var(--accent-cyan);
+        transform: translateY(-2px);
+      }
+
+      .game-card-info {
+        display: flex;
+        flex-direction: column;
+        gap: 0.2rem;
+      }
+
+      .game-card-title {
+        font-weight: 600;
+        font-size: 0.9rem;
+        color: #ffffff;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .game-card-meta {
+        font-size: 0.75rem;
+        color: var(--text-color);
+        opacity: 0.8;
+      }
+
+      .game-card-actions {
+        display: flex;
+        gap: 0.5rem;
+        margin-top: 0.25rem;
+      }
+
+      .btn-play {
+        flex: 1;
+        background-color: var(--accent-green);
+        color: var(--bg-color);
+        border: none;
+        padding: 0.35rem 0.6rem;
+        border-radius: 4px;
+        font-weight: 700;
+        font-size: 0.8rem;
+        cursor: pointer;
+        transition: background-color 0.2s ease;
+      }
+
+      .btn-play:hover {
+        background-color: var(--accent-cyan);
+      }
+
+      .btn-delete {
+        background-color: transparent;
+        color: var(--danger);
+        border: 1px solid var(--danger);
+        padding: 0.35rem 0.6rem;
+        border-radius: 4px;
+        font-weight: 600;
+        font-size: 0.8rem;
+        cursor: pointer;
+        transition: all 0.2s ease;
+      }
+
+      .btn-delete:hover {
+        background-color: var(--danger);
+        color: #ffffff;
+      }
+
+      .library-empty {
+        text-align: center;
+        font-size: 0.85rem;
+        color: var(--text-color);
+        opacity: 0.7;
+        padding: 1rem 0;
       }
 
       #game-frame {
@@ -384,6 +534,18 @@
     </header>
 
     <main>
+      <!-- Saved Games Library Drawer -->
+      <div id="library-container">
+        <div class="library-header" id="library-header">
+          <div class="library-title">📚 Saved Games Library</div>
+          <span class="library-toggle-icon" id="library-toggle-icon">▼</span>
+        </div>
+        <div id="library-content">
+          <div class="library-grid" id="library-grid">
+            <div class="library-empty">No saved games in local library. Upload a .zip game above!</div>
+          </div>
+        </div>
+      </div>
       <div id="dropzone">
         <p>🎮 Drag & Drop HTML5 Game (.zip) Here or Click to Select</p>
         <label for="file-input" class="file-select-label">Choose ZIP File</label>
