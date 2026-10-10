@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
     <title>RunaWeb - In-Memory Game Runner</title>
     <style>
       :root {
@@ -20,6 +20,8 @@
         box-sizing: border-box;
         margin: 0;
         padding: 0;
+        user-select: none;
+        -webkit-user-select: none;
       }
 
       body {
@@ -40,6 +42,7 @@
         justify-content: space-between;
         align-items: center;
         box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+        z-index: 10;
       }
 
       .logo {
@@ -71,7 +74,7 @@
         transition: all 0.2s ease;
       }
 
-      .btn:hover:not(:disabled) {
+      .btn:hover:not(:disabled), .btn.active {
         background-color: var(--accent-cyan);
         color: var(--bg-color);
         box-shadow: 0 0 10px rgba(102, 252, 241, 0.5);
@@ -89,8 +92,9 @@
         display: flex;
         flex-direction: column;
         position: relative;
-        padding: 1rem;
-        gap: 1rem;
+        padding: 0.5rem;
+        gap: 0.5rem;
+        height: calc(100vh - 60px);
       }
 
       #dropzone {
@@ -101,7 +105,7 @@
         flex-direction: column;
         justify-content: center;
         align-items: center;
-        padding: 2rem;
+        padding: 1rem;
         text-align: center;
         transition: all 0.3s ease;
         cursor: pointer;
@@ -114,8 +118,8 @@
       }
 
       #dropzone p {
-        font-size: 1.1rem;
-        margin-bottom: 1rem;
+        font-size: 1rem;
+        margin-bottom: 0.5rem;
       }
 
       #file-input {
@@ -125,7 +129,7 @@
       .file-select-label {
         background-color: var(--accent-green);
         color: var(--bg-color);
-        padding: 0.6rem 1.2rem;
+        padding: 0.5rem 1rem;
         border-radius: 4px;
         font-weight: bold;
         cursor: pointer;
@@ -160,12 +164,218 @@
         color: var(--accent-cyan);
         margin-top: 0.5rem;
       }
+
+      /* Cyberpunk/Retro Glassmorphic Virtual Gamepad Overlay Styles */
+      #virtual-gamepad {
+        position: absolute;
+        bottom: 10px;
+        left: 10px;
+        right: 10px;
+        pointer-events: none;
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-end;
+        z-index: 100;
+        padding: 10px;
+
+        background: rgba(11, 12, 16, 0.4);
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+        border: 1px solid rgba(102, 252, 241, 0.25);
+        border-radius: 16px;
+        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5), inset 0 0 12px rgba(102, 252, 241, 0.1);
+        transition: opacity 0.3s ease, visibility 0.3s ease;
+      }
+
+      #virtual-gamepad.hidden {
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+      }
+
+      #virtual-gamepad button {
+        pointer-events: auto;
+        touch-action: manipulation;
+        font-family: inherit;
+        font-weight: bold;
+        color: var(--accent-cyan);
+        background: rgba(31, 40, 51, 0.6);
+        border: 2px solid var(--accent-cyan);
+        border-radius: 50%;
+        box-shadow: 0 0 8px rgba(102, 252, 241, 0.3);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        transition: transform 0.08s ease, background-color 0.08s ease, box-shadow 0.08s ease;
+      }
+
+      #virtual-gamepad button:active, #virtual-gamepad button.pressed {
+        background: var(--accent-cyan);
+        color: var(--bg-color);
+        box-shadow: 0 0 15px var(--accent-cyan);
+        transform: scale(0.92);
+      }
+
+      /* D-Pad Section */
+      .dpad-container {
+        position: relative;
+        width: 140px;
+        height: 140px;
+      }
+
+      .dpad-btn {
+        position: absolute;
+        width: 44px;
+        height: 44px;
+        border-radius: 8px !important;
+        font-size: 1.2rem;
+      }
+
+      .dpad-btn[data-key="ArrowUp"] {
+        top: 0;
+        left: 48px;
+      }
+
+      .dpad-btn[data-key="ArrowDown"] {
+        bottom: 0;
+        left: 48px;
+      }
+
+      .dpad-btn[data-key="ArrowLeft"] {
+        top: 48px;
+        left: 0;
+      }
+
+      .dpad-btn[data-key="ArrowRight"] {
+        top: 48px;
+        right: 0;
+      }
+
+      /* Center Option Buttons (Start / Select) */
+      .center-container {
+        display: flex;
+        gap: 12px;
+        align-self: flex-end;
+        margin-bottom: 8px;
+      }
+
+      .center-btn {
+        width: 60px !important;
+        height: 28px !important;
+        border-radius: 14px !important;
+        font-size: 0.7rem;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        border-color: var(--accent-green) !important;
+        color: var(--accent-green) !important;
+      }
+
+      .center-btn:active, .center-btn.pressed {
+        background: var(--accent-green) !important;
+        color: var(--bg-color) !important;
+        box-shadow: 0 0 12px var(--accent-green) !important;
+      }
+
+      /* Action Buttons Section (X/Y/A/B) */
+      .actions-container {
+        position: relative;
+        width: 140px;
+        height: 140px;
+      }
+
+      .action-btn {
+        position: absolute;
+        width: 44px;
+        height: 44px;
+        font-size: 1.1rem;
+      }
+
+      .action-btn[data-button="Y"] {
+        top: 0;
+        left: 48px;
+        border-color: #ffbd59 !important;
+        color: #ffbd59 !important;
+      }
+
+      .action-btn[data-button="Y"]:active, .action-btn[data-button="Y"].pressed {
+        background: #ffbd59 !important;
+        color: var(--bg-color) !important;
+        box-shadow: 0 0 12px #ffbd59 !important;
+      }
+
+      .action-btn[data-button="X"] {
+        top: 48px;
+        left: 0;
+        border-color: var(--accent-cyan) !important;
+        color: var(--accent-cyan) !important;
+      }
+
+      .action-btn[data-button="B"] {
+        top: 48px;
+        right: 0;
+        border-color: var(--danger) !important;
+        color: var(--danger) !important;
+      }
+
+      .action-btn[data-button="B"]:active, .action-btn[data-button="B"].pressed {
+        background: var(--danger) !important;
+        color: #fff !important;
+        box-shadow: 0 0 12px var(--danger) !important;
+      }
+
+      .action-btn[data-button="A"] {
+        bottom: 0;
+        left: 48px;
+        border-color: #50fa7b !important;
+        color: #50fa7b !important;
+      }
+
+      .action-btn[data-button="A"]:active, .action-btn[data-button="A"].pressed {
+        background: #50fa7b !important;
+        color: var(--bg-color) !important;
+        box-shadow: 0 0 12px #50fa7b !important;
+      }
+
+      @media (max-width: 600px) {
+        .dpad-container, .actions-container {
+          width: 120px;
+          height: 120px;
+        }
+
+        .dpad-btn, .action-btn {
+          width: 38px;
+          height: 38px;
+        }
+
+        .dpad-btn[data-key="ArrowUp"], .action-btn[data-button="Y"] {
+          left: 41px;
+        }
+
+        .dpad-btn[data-key="ArrowDown"], .action-btn[data-button="A"] {
+          left: 41px;
+        }
+
+        .dpad-btn[data-key="ArrowLeft"], .action-btn[data-button="X"] {
+          top: 41px;
+        }
+
+        .dpad-btn[data-key="ArrowRight"], .action-btn[data-button="B"] {
+          top: 41px;
+        }
+
+        .center-btn {
+          width: 50px !important;
+          height: 24px !important;
+          font-size: 0.6rem;
+        }
+      }
     </style>
   </head>
   <body>
     <header>
       <div class="logo">⚡ RUNAWEB</div>
       <div class="controls">
+        <button id="gamepad-toggle-btn" class="btn" title="Toggle Virtual Gamepad">🎮 Gamepad</button>
         <button id="reload-btn" class="btn" disabled>Reload</button>
         <button id="fullscreen-btn" class="btn" disabled>Fullscreen</button>
       </div>
@@ -185,6 +395,28 @@
           sandbox="allow-scripts allow-same-origin allow-pointer-lock"
           title="Virtual Game Window"
         ></iframe>
+
+        <!-- Virtual Gamepad Overlay -->
+        <div id="virtual-gamepad" class="hidden">
+          <div class="dpad-container">
+            <button class="dpad-btn" data-key="ArrowUp">▲</button>
+            <button class="dpad-btn" data-key="ArrowLeft">◀</button>
+            <button class="dpad-btn" data-key="ArrowRight">▶</button>
+            <button class="dpad-btn" data-key="ArrowDown">▼</button>
+          </div>
+
+          <div class="center-container">
+            <button class="center-btn" data-button="SELECT">SELECT</button>
+            <button class="center-btn" data-button="START">START</button>
+          </div>
+
+          <div class="actions-container">
+            <button class="action-btn" data-button="Y">Y</button>
+            <button class="action-btn" data-button="X">X</button>
+            <button class="action-btn" data-button="B">B</button>
+            <button class="action-btn" data-button="A">A</button>
+          </div>
+        </div>
       </div>
     </main>
 
