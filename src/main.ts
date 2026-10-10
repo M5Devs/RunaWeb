@@ -145,13 +145,13 @@ function setViewMode(mode: 'hub' | 'theater') {
   currentMode = mode;
   if (mode === 'theater') {
     document.body.classList.remove('mode-hub');
-    document.body.classList.add('mode-theater');
+    document.body.classList.add('mode-theater', 'is-playing');
     if (exitBtn) exitBtn.style.display = 'inline-flex';
 
     isHeaderPinned = false;
     expandHeader();
   } else {
-    document.body.classList.remove('mode-theater');
+    document.body.classList.remove('mode-theater', 'is-playing');
     document.body.classList.add('mode-hub');
     if (exitBtn) exitBtn.style.display = 'none';
 
