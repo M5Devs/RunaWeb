@@ -1,6 +1,7 @@
 import { unzip, Unzipped } from 'fflate';
 import { saveGame, getSavedGames, loadGameById, deleteGame, SavedGame } from './storage';
 import { PhysicalGamepadManager } from './gamepad';
+import { processExtractedFiles, validateSaveState, isProtectedKey, normalizePath } from './engine';
 
 declare global {
   interface Window {
@@ -16,6 +17,9 @@ declare global {
     __runa_speed_mult?: number;
   }
 }
+
+// Internal app storage prefix
+const HOST_APP_KEY_PREFIX = 'runaweb_app_';
 
 // swRegistration
 let currentFileMap: Record<string, Uint8Array> | null = null;
@@ -79,6 +83,15 @@ let isFastForward = false;
 type AspectRatioMode = 'fit' | '4-3' | '16-9';
 let currentAspectRatio: AspectRatioMode = 'fit';
 let isCrtEnabled = false;
+
+function setAppConfig(key: string, value: string) {
+  try {
+    const prefixedKey = key.startsWith(HOST_APP_KEY_PREFIX) ? key : `${HOST_APP_KEY_PREFIX}${key}`;
+    localStorage.setItem(prefixedKey, value);
+  } catch (err) {
+    console.warn('Failed to set app config:', err);
+  }
+}
 
 function showProgressModal(title: string, statusText: string, progressPercent: number) {
   if (!loadingOverlay) return;
@@ -216,14 +229,16 @@ function configureIframeIsolation() {
   });
 }
 
+const ALLOWED_IPC_TYPES = Object.freeze(['RUNAWEB_GAME_PAUSE', 'RUNAWEB_GAME_RELOAD'] as const);
+
 function setupMessageIsolation() {
-  window.addEventListener('message', (event: MessageEvent) => {
+  const handleHostMessage = (event: MessageEvent) => {
     // Validate message source is from game iframe
     if (gameFrame && event.source !== gameFrame.contentWindow) {
       return;
     }
 
-    // Validate origin match or null (iframe data/blob/about)
+    // Validate origin match or null/empty (iframe data/blob/about/virtual scope)
     if (event.origin !== window.location.origin && event.origin !== 'null' && event.origin !== '') {
       return;
     }
@@ -233,13 +248,22 @@ function setupMessageIsolation() {
       return;
     }
 
+    if (!ALLOWED_IPC_TYPES.includes(data.type as any)) {
+      return;
+    }
+
     // Process known application level IPC commands securely
     if (data.type === 'RUNAWEB_GAME_PAUSE') {
       togglePause();
     } else if (data.type === 'RUNAWEB_GAME_RELOAD') {
       if (currentFileMap) loadGame(currentFileMap, currentEntryPath);
     }
-  });
+  };
+
+  // Seal the message handler wrapper to guard against host state mutation/tampering
+  Object.freeze(handleHostMessage);
+
+  window.addEventListener('message', handleHostMessage);
 }
 
 function setViewMode(mode: 'hub' | 'theater') {
@@ -298,10 +322,12 @@ function setupErudaDevTools() {
       window.eruda.show();
       erudaActive = true;
       debugToggleBtn.classList.add('active');
+      setAppConfig('eruda_active', 'true');
     } else {
       window.eruda.hide();
       erudaActive = false;
       debugToggleBtn.classList.remove('active');
+      setAppConfig('eruda_active', 'false');
     }
   });
 }
@@ -345,68 +371,6 @@ function detectCoverImage(normalizedMap: Record<string, Uint8Array>): string | u
     }
   }
   return undefined;
-}
-
-function processExtractedFiles(unzipped: Unzipped): {
-  normalizedMap: Record<string, Uint8Array>;
-  entryPath: string;
-} {
-  const filePaths = Object.keys(unzipped);
-
-  let paths = filePaths
-    .map((p) => p.replace(/\\/g, '/'))
-    .filter((p) => !p.endsWith('/'));
-
-  let commonPrefix = '';
-  while (paths.length > 0) {
-    const firstPathParts = paths[0].split('/');
-    if (firstPathParts.length <= 1) break;
-
-    const potentialPrefix = firstPathParts[0] + '/';
-    const allStartWithPrefix = paths.every(
-      (p) => p.startsWith(potentialPrefix) && p.length > potentialPrefix.length
-    );
-
-    if (allStartWithPrefix) {
-      commonPrefix += potentialPrefix;
-      paths = paths.map((p) => p.slice(potentialPrefix.length));
-    } else {
-      break;
-    }
-  }
-
-  const normalizedMap: Record<string, Uint8Array> = {};
-  for (const rawPath of filePaths) {
-    const normalizedRaw = rawPath.replace(/\\/g, '/');
-    if (normalizedRaw.endsWith('/')) continue;
-
-    let cleanPath = normalizedRaw;
-    if (commonPrefix && cleanPath.startsWith(commonPrefix)) {
-      cleanPath = cleanPath.slice(commonPrefix.length);
-    }
-    cleanPath = cleanPath.replace(/^\/+/, '');
-    if (cleanPath) {
-      normalizedMap[cleanPath] = unzipped[rawPath];
-    }
-  }
-
-  let entryPath = 'index.html';
-  if ('index.html' in normalizedMap) {
-    entryPath = 'index.html';
-  } else {
-    const keys = Object.keys(normalizedMap);
-    const exactIndex = keys.find((k) => k.toLowerCase() === 'index.html');
-    if (exactIndex) {
-      entryPath = exactIndex;
-    } else {
-      const nestedIndex = keys.find((k) => k.toLowerCase().endsWith('/index.html'));
-      if (nestedIndex) {
-        entryPath = nestedIndex;
-      }
-    }
-  }
-
-  return { normalizedMap, entryPath };
 }
 
 function extractGameTitle(normalizedMap: Record<string, Uint8Array>, entryPath: string, defaultName: string): string {
@@ -559,7 +523,7 @@ async function loadGame(fileMap: Record<string, Uint8Array>, entryPath: string =
   const cachePromises: Promise<void>[] = [];
   for (const path in fileMap) {
     if (Object.prototype.hasOwnProperty.call(fileMap, path)) {
-      const normalizedPath = path.replace(/\\/g, "/").replace(/^\/+/, "");
+      const normalizedPath = normalizePath(path);
       const fileBuffer = fileMap[path];
       const mimeType = getMimeType(normalizedPath);
 
@@ -587,7 +551,7 @@ async function loadGame(fileMap: Record<string, Uint8Array>, entryPath: string =
 
   setViewMode('theater');
 
-  const cleanEntry = entryPath.replace(/^\/+/, '');
+  const cleanEntry = normalizePath(entryPath);
   const entryUrl = new URL(`${import.meta.env.BASE_URL}virtual-game/${cleanEntry}`, window.location.origin).href;
   if (gameFrame) {
     gameFrame.referrerPolicy = 'no-referrer';
@@ -959,7 +923,7 @@ function getIframeLocalStorage(): Record<string, string> {
     if (frameWindow && frameWindow.localStorage) {
       for (let i = 0; i < frameWindow.localStorage.length; i++) {
         const key = frameWindow.localStorage.key(i);
-        if (key !== null) {
+        if (key !== null && !isProtectedKey(key)) {
           storageData[key] = frameWindow.localStorage.getItem(key) || '';
         }
       }
@@ -971,7 +935,7 @@ function getIframeLocalStorage(): Record<string, string> {
   try {
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
-      if (key !== null && !(key in storageData)) {
+      if (key !== null && !isProtectedKey(key) && !(key in storageData)) {
         storageData[key] = localStorage.getItem(key) || '';
       }
     }
@@ -986,9 +950,10 @@ function setIframeLocalStorage(storageData: Record<string, string>) {
   try {
     const frameWindow = gameFrame.contentWindow;
     if (frameWindow && frameWindow.localStorage) {
-      frameWindow.localStorage.clear();
       for (const [key, value] of Object.entries(storageData)) {
-        frameWindow.localStorage.setItem(key, value);
+        if (!isProtectedKey(key)) {
+          frameWindow.localStorage.setItem(key, value);
+        }
       }
     }
   } catch (err) {
@@ -997,7 +962,9 @@ function setIframeLocalStorage(storageData: Record<string, string>) {
 
   try {
     for (const [key, value] of Object.entries(storageData)) {
-      localStorage.setItem(key, value);
+      if (!isProtectedKey(key)) {
+        localStorage.setItem(key, value);
+      }
     }
   } catch (err) {
     console.warn('Could not write top localStorage:', err);
@@ -1075,11 +1042,8 @@ function setupSaveManager() {
           const content = event.target?.result as string;
           const parsed = JSON.parse(content);
 
-          if (!parsed || typeof parsed !== 'object' || !parsed.data) {
-            throw new Error('Invalid save file format.');
-          }
-
-          setIframeLocalStorage(parsed.data);
+          const sanitizedData = validateSaveState(parsed);
+          setIframeLocalStorage(sanitizedData);
 
           if (saveModalStatus) {
             saveModalStatus.textContent = 'Save state imported successfully! Reloading frame...';
