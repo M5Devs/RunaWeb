@@ -106,7 +106,9 @@
       }
 
       body.mode-theater header.hud-collapsed ~ #floating-hud-pill,
-      body.mode-theater header.hud-hidden ~ #floating-hud-pill {
+      body.mode-theater header.hud-hidden ~ #floating-hud-pill,
+      body.is-playing header.hud-collapsed ~ #floating-hud-pill,
+      body.is-playing header.hud-hidden ~ #floating-hud-pill {
         opacity: 1;
         pointer-events: auto;
         transform: translateY(0);
@@ -801,6 +803,35 @@
           height: 22px !important;
           font-size: 0.55rem;
         }
+      }
+
+      /* ACTIVE GAME / THEATER MODE STYLES */
+      body.is-playing .hub-view,
+      body.is-playing #dropzone,
+      body.is-playing .library-section {
+        display: none !important;
+      }
+
+      body.is-playing #game-container {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        width: 100vw;
+        height: 100dvh;
+        margin: 0;
+        padding: 0;
+        position: fixed;
+        top: 0;
+        left: 0;
+        z-index: 10;
+        background: #000;
+      }
+
+      body.is-playing #game-frame {
+        width: 100%;
+        height: 100%;
+        border: none;
+        display: block;
       }
     </style>
   </head>
