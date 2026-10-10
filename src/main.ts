@@ -23,13 +23,12 @@ const statusEl = document.getElementById('status') as HTMLDivElement;
 const gameFrame = document.getElementById('game-frame') as HTMLIFrameElement;
 const reloadBtn = document.getElementById('reload-btn') as HTMLButtonElement;
 const fullscreenBtn = document.getElementById('fullscreen-btn') as HTMLButtonElement;
+const exitBtn = document.getElementById('exit-btn') as HTMLButtonElement;
 const gameContainer = document.getElementById('game-container') as HTMLDivElement;
 const gamepadToggleBtn = document.getElementById('gamepad-toggle-btn') as HTMLButtonElement;
 const debugToggleBtn = document.getElementById('debug-toggle-btn') as HTMLButtonElement;
 const virtualGamepad = document.getElementById('virtual-gamepad') as HTMLDivElement;
 
-const libraryContainer = document.getElementById('library-container') as HTMLDivElement;
-const libraryHeader = document.getElementById('library-header') as HTMLDivElement;
 const libraryGrid = document.getElementById('library-grid') as HTMLDivElement;
 
 const baseUrl = import.meta.env.BASE_URL.endsWith('/')
@@ -37,6 +36,23 @@ const baseUrl = import.meta.env.BASE_URL.endsWith('/')
   : import.meta.env.BASE_URL + '/';
 
 let erudaActive = false;
+
+function setViewMode(mode: 'hub' | 'theater') {
+  if (mode === 'theater') {
+    document.body.classList.remove('mode-hub');
+    document.body.classList.add('mode-theater');
+    if (exitBtn) exitBtn.style.display = 'inline-flex';
+  } else {
+    document.body.classList.remove('mode-theater');
+    document.body.classList.add('mode-hub');
+    if (exitBtn) exitBtn.style.display = 'none';
+
+    // Reset iframe when exiting to hub
+    gameFrame.src = 'about:blank';
+    reloadBtn.disabled = true;
+    fullscreenBtn.disabled = true;
+  }
+}
 
 function setupErudaDevTools() {
   if (!debugToggleBtn) return;
@@ -240,6 +256,9 @@ async function loadGame(fileMap: Record<string, Uint8Array>, entryPath: string =
     files: fileMap
   });
 
+  // Transition into Theater / Playing View
+  setViewMode('theater');
+
   // Small delay to ensure SW stores files before iframe fetch
   setTimeout(() => {
     const cleanEntry = entryPath.replace(/^\/+/, '');
@@ -263,7 +282,12 @@ async function refreshGameLibrary() {
     libraryGrid.innerHTML = '';
 
     if (games.length === 0) {
-      libraryGrid.innerHTML = '<div class="library-empty">No saved games in local library. Upload a .zip game above!</div>';
+      libraryGrid.innerHTML = `
+        <div class="library-empty">
+          <span class="library-empty-icon">👾</span>
+          <p>Your arcade shelf is empty! Drop a game to start your collection.</p>
+        </div>
+      `;
       return;
     }
 
@@ -276,19 +300,24 @@ async function refreshGameLibrary() {
 
       const formattedDate = new Date(game.date).toLocaleDateString(undefined, {
         month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
+        day: 'numeric'
       });
 
       card.innerHTML = `
-        <div class="game-card-info">
-          <div class="game-card-title" title="${game.name}">${game.name}</div>
-          <div class="game-card-meta">${formatBytes(game.size)} • ${formattedDate}</div>
+        <div>
+          <div class="game-card-icon-wrapper">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M21 6H3c-1.1 0-2 .9-2 2v8c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-10 7H9v2H7v-2H5v-2h2V9h2v2h2v2zm4.5 1c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm3-3c-.83 0-1.5-.67-1.5-1.5S17.67 9 18.5 9s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/>
+            </svg>
+          </div>
+          <div class="game-card-info">
+            <div class="game-card-title" title="${game.name}">${game.name}</div>
+            <div class="game-card-meta">${formatBytes(game.size)} • ${formattedDate}</div>
+          </div>
         </div>
         <div class="game-card-actions">
           <button class="btn-play" data-id="${game.id}">▶ Play</button>
-          <button class="btn-delete" data-id="${game.id}">🗑 Delete</button>
+          <button class="btn-delete" data-id="${game.id}" title="Delete Game">🗑</button>
         </div>
       `;
 
@@ -332,15 +361,6 @@ async function refreshGameLibrary() {
   }
 }
 
-function setupLibraryUI() {
-  if (libraryHeader && libraryContainer) {
-    libraryHeader.addEventListener('click', () => {
-      libraryContainer.classList.toggle('collapsed');
-    });
-  }
-  refreshGameLibrary();
-}
-
 function handleFileSelect(file: File) {
   if (!file.name.toLowerCase().endsWith('.zip')) {
     statusEl.textContent = 'Please select a valid .zip file.';
@@ -357,29 +377,39 @@ function handleFileSelect(file: File) {
 }
 
 // Drag & Drop
-dropzone.addEventListener('dragover', (e) => {
-  e.preventDefault();
-  dropzone.classList.add('dragover');
-});
+if (dropzone) {
+  dropzone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    dropzone.classList.add('dragover');
+  });
 
-dropzone.addEventListener('dragleave', () => {
-  dropzone.classList.remove('dragover');
-});
+  dropzone.addEventListener('dragleave', () => {
+    dropzone.classList.remove('dragover');
+  });
 
-dropzone.addEventListener('drop', (e) => {
-  e.preventDefault();
-  dropzone.classList.remove('dragover');
-  if (e.dataTransfer?.files && e.dataTransfer.files.length > 0) {
-    handleFileSelect(e.dataTransfer.files[0]);
-  }
-});
+  dropzone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropzone.classList.remove('dragover');
+    if (e.dataTransfer?.files && e.dataTransfer.files.length > 0) {
+      handleFileSelect(e.dataTransfer.files[0]);
+    }
+  });
+}
 
-fileInput.addEventListener('change', (e) => {
-  const target = e.target as HTMLInputElement;
-  if (target.files && target.files.length > 0) {
-    handleFileSelect(target.files[0]);
-  }
-});
+if (fileInput) {
+  fileInput.addEventListener('change', (e) => {
+    const target = e.target as HTMLInputElement;
+    if (target.files && target.files.length > 0) {
+      handleFileSelect(target.files[0]);
+    }
+  });
+}
+
+if (exitBtn) {
+  exitBtn.addEventListener('click', () => {
+    setViewMode('hub');
+  });
+}
 
 reloadBtn.addEventListener('click', () => {
   if (currentFileMap) {
@@ -475,7 +505,7 @@ function setupVirtualGamepad() {
     const btnKey = btn.getAttribute('data-key') || btn.getAttribute('data-button');
     if (!btnKey) return;
 
-    // Prevent default touch behaviors (zoom, scroll, focus loss, selection)
+    // Prevent default touch behaviors
     const handleStart = (e: Event) => {
       e.preventDefault();
       btn.classList.add('pressed');
@@ -519,4 +549,7 @@ function setupVirtualGamepad() {
 registerServiceWorker();
 setupErudaDevTools();
 setupVirtualGamepad();
-setupLibraryUI();
+refreshGameLibrary();
+
+// Default mode is hub
+setViewMode('hub');
