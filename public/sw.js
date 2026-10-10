@@ -2,7 +2,7 @@
 
 let gameFiles = new Map();
 
-self.addEventListener('install', (event) => {
+self.addEventListener('install', () => {
   self.skipWaiting();
 });
 
@@ -56,47 +56,60 @@ function getMimeType(filePath) {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
-  // Check if pathname contains /virtual-game/ to support base path deployments (e.g. /RunaWeb/virtual-game/...)
-  const vgameIndex = url.pathname.indexOf('/virtual-game');
-  if (vgameIndex !== -1) {
-    event.respondWith(
-      (async () => {
-        let relativePath = url.pathname.slice(vgameIndex + '/virtual-game'.length);
-        if (relativePath.startsWith('/')) {
-          relativePath = relativePath.slice(1);
-        }
+  // Match any URL containing virtual-game/
+  const match = url.pathname.match(/virtual-game\/(.*)$/);
+  if (!match) return;
 
-        if (!relativePath || relativePath === '') {
-          relativePath = 'index.html';
-        }
+  event.respondWith(
+    (async () => {
+      let relativePath = decodeURIComponent(match[1]);
+      if (!relativePath || relativePath.endsWith('/')) {
+        relativePath += 'index.html';
+      }
+      relativePath = relativePath.replace(/^\/+/, ''); // strip leading slash
 
-        // Search for relativePath in gameFiles
-        let fileData = gameFiles.get(relativePath);
+      // Search for relativePath in gameFiles
+      let fileData = gameFiles.get(relativePath);
 
-        // Fallback: if not found directly, try case-insensitive or decoded URL path
-        if (!fileData) {
-          const decodedPath = decodeURIComponent(relativePath);
-          fileData = gameFiles.get(decodedPath);
-        }
+      // Fallback check: if missing, try with/without leading ./ or case-insensitively
+      if (!fileData) {
+        const withoutDotSlash = relativePath.replace(/^\.\//, '');
+        const withDotSlash = './' + withoutDotSlash;
 
-        if (fileData) {
-          const mimeType = getMimeType(relativePath);
-          return new Response(fileData, {
-            status: 200,
-            headers: {
-              'Content-Type': mimeType,
-              'Content-Length': fileData.byteLength.toString(),
-              'Cache-Control': 'no-cache'
+        if (gameFiles.has(withoutDotSlash)) {
+          fileData = gameFiles.get(withoutDotSlash);
+        } else if (gameFiles.has(withDotSlash)) {
+          fileData = gameFiles.get(withDotSlash);
+        } else {
+          const targetLower = relativePath.toLowerCase();
+          const targetWithoutDotSlashLower = withoutDotSlash.toLowerCase();
+          for (const [key, data] of gameFiles.entries()) {
+            const keyLower = key.toLowerCase();
+            if (keyLower === targetLower || keyLower === targetWithoutDotSlashLower) {
+              fileData = data;
+              break;
             }
-          });
+          }
         }
+      }
 
-        return new Response('404 Not Found in Virtual Game Storage', {
-          status: 404,
-          statusText: 'Not Found',
-          headers: { 'Content-Type': 'text/plain' }
+      if (fileData) {
+        const mimeType = getMimeType(relativePath);
+        return new Response(fileData, {
+          status: 200,
+          headers: {
+            'Content-Type': mimeType,
+            'Content-Length': fileData.byteLength.toString(),
+            'Cache-Control': 'no-cache'
+          }
         });
-      })()
-    );
-  }
+      }
+
+      return new Response('404 Not Found in Virtual Game Storage', {
+        status: 404,
+        statusText: 'Not Found',
+        headers: { 'Content-Type': 'text/plain' }
+      });
+    })()
+  );
 });
