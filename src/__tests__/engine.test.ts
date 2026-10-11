@@ -4,11 +4,14 @@ import {
   detectEntryPoint,
   processExtractedFiles,
   validateSaveState,
-  isProtectedKey
+  isProtectedKey,
+  generateSessionToken,
+  validateIPCMessage,
+  MAX_SAVE_STATE_SIZE_BYTES
 } from '../engine';
 
 describe('Engine Unit Tests', () => {
-  describe('Test 1: Path Normalization', () => {
+  describe('Test 1: Path Normalization & Zip-Slip Protection', () => {
     it('should convert backslashes to forward slashes and strip leading slashes', () => {
       expect(normalizePath('\\assets\\js\\main.js')).toBe('assets/js/main.js');
       expect(normalizePath('///css/style.css')).toBe('css/style.css');
@@ -32,6 +35,37 @@ describe('Engine Unit Tests', () => {
         'assets/images/bg.png'
       ]);
       expect(result.entryPath).toBe('index.html');
+    });
+
+    it('should throw explicit SecurityError for Zip-Slip path traversal sequences', () => {
+      const traversalPaths = [
+        '../evil.js',
+        './../config.json',
+        'foo/../../bar.js',
+        'nested\\..\\..\\secret.txt',
+        'assets/../../../etc/passwd'
+      ];
+
+      for (const p of traversalPaths) {
+        expect(() => normalizePath(p)).toThrow(
+          'SecurityError: Path traversal sequence detected in archive'
+        );
+      }
+    });
+
+    it('should reject unzipped archives containing path traversal files in processExtractedFiles', () => {
+      const dummy = new Uint8Array([1, 2, 3]);
+      const maliciousArchives: Record<string, Uint8Array>[] = [
+        { '../evil.js': dummy, 'index.html': dummy },
+        { 'folder/../../secret.txt': dummy, 'index.html': dummy },
+        { 'a/b/../../../etc/shadow': dummy }
+      ];
+
+      for (const archive of maliciousArchives) {
+        expect(() => processExtractedFiles(archive)).toThrow(
+          'SecurityError: Path traversal sequence detected in archive'
+        );
+      }
     });
   });
 
@@ -118,6 +152,64 @@ describe('Engine Unit Tests', () => {
       expect(sanitized).toHaveProperty('game_level', '10');
       expect(sanitized).not.toHaveProperty('runaweb_app_config');
       expect(sanitized).not.toHaveProperty('runaweb_db');
+    });
+
+    it('should reject oversized save state payloads', () => {
+      const hugeString = 'A'.repeat(MAX_SAVE_STATE_SIZE_BYTES + 100);
+      const oversizedPayload = {
+        data: {
+          hugeKey: hugeString
+        }
+      };
+
+      expect(() => validateSaveState(oversizedPayload)).toThrow(
+        'Save state payload exceeds maximum allowed size'
+      );
+    });
+  });
+
+  describe('Test 4: IPC Nonce Validation', () => {
+    it('should generate a unique, cryptographically secure session token', () => {
+      const token1 = generateSessionToken();
+      const token2 = generateSessionToken();
+
+      expect(typeof token1).toBe('string');
+      expect(token1.length).toBeGreaterThan(0);
+      expect(token1).not.toBe(token2);
+    });
+
+    it('should accept IPC messages with matching valid session tokens', () => {
+      const token = generateSessionToken();
+      const validMsg = {
+        type: 'RUNAWEB_GAME_PAUSE',
+        sessionToken: token
+      };
+
+      expect(validateIPCMessage(validMsg, token)).toBe(true);
+    });
+
+    it('should reject IPC messages with missing, mismatched, or spoofed session tokens', () => {
+      const validToken = generateSessionToken();
+      const spoofedToken = generateSessionToken();
+
+      const missingTokenMsg = { type: 'RUNAWEB_GAME_PAUSE' };
+      const wrongTokenMsg = { type: 'RUNAWEB_GAME_PAUSE', sessionToken: spoofedToken };
+      const emptyTokenMsg = { type: 'RUNAWEB_GAME_PAUSE', sessionToken: '' };
+
+      expect(validateIPCMessage(missingTokenMsg, validToken)).toBe(false);
+      expect(validateIPCMessage(wrongTokenMsg, validToken)).toBe(false);
+      expect(validateIPCMessage(emptyTokenMsg, validToken)).toBe(false);
+      expect(validateIPCMessage(wrongTokenMsg, null)).toBe(false);
+    });
+
+    it('should reject malformed non-object IPC message payloads', () => {
+      const token = generateSessionToken();
+
+      expect(validateIPCMessage(null, token)).toBe(false);
+      expect(validateIPCMessage('string payload', token)).toBe(false);
+      expect(validateIPCMessage(12345, token)).toBe(false);
+      expect(validateIPCMessage([], token)).toBe(false);
+      expect(validateIPCMessage({ sessionToken: token }, token)).toBe(false); // missing type
     });
   });
 });

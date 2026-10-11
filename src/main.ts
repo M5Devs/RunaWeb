@@ -1,7 +1,7 @@
 import { unzip, Unzipped } from 'fflate';
 import { saveGame, getSavedGames, loadGameById, deleteGame, SavedGame } from './storage';
 import { PhysicalGamepadManager } from './gamepad';
-import { processExtractedFiles, validateSaveState, isProtectedKey, normalizePath } from './engine';
+import { processExtractedFiles, validateSaveState, isProtectedKey, normalizePath, generateSessionToken, validateIPCMessage } from './engine';
 
 declare global {
   interface Window {
@@ -25,6 +25,7 @@ const HOST_APP_KEY_PREFIX = 'runaweb_app_';
 let currentFileMap: Record<string, Uint8Array> | null = null;
 let currentEntryPath: string = 'index.html';
 let activeGameName: string = 'active_game';
+let currentSessionToken: string | null = null;
 
 const dropzone = document.getElementById('dropzone') as HTMLDivElement;
 const fileInput = document.getElementById('file-input') as HTMLInputElement;
@@ -244,7 +245,7 @@ function setupMessageIsolation() {
     }
 
     const data = event.data;
-    if (!data || typeof data !== 'object' || typeof data.type !== 'string') {
+    if (!validateIPCMessage(data, currentSessionToken)) {
       return;
     }
 
@@ -300,6 +301,7 @@ function setViewMode(mode: 'hub' | 'theater') {
     }
     appHeader.classList.remove('hud-collapsed', 'hud-hidden');
 
+    currentSessionToken = null;
     gameFrame.src = 'about:blank';
     reloadBtn.disabled = true;
     fullscreenBtn.disabled = true;
@@ -511,6 +513,8 @@ function getMimeType(filePath: string): string {
 }
 
 async function loadGame(fileMap: Record<string, Uint8Array>, entryPath: string = 'index.html') {
+  const sessionToken = generateSessionToken();
+  currentSessionToken = sessionToken;
   currentEntryPath = entryPath;
 
   const cache = await caches.open('runaweb-virtual-game');
