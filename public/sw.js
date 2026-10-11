@@ -122,17 +122,54 @@ self.addEventListener('fetch', (event) => {
       const cache = await caches.open(GAME_CACHE);
       // 1. Direct match with full request URL (ignoring search params)
       let match = await cache.match(event.request, { ignoreSearch: true });
-      if (match) return match;
 
       // 2. Fallback: match by filename/pathname ending
-      const keys = await cache.keys();
-      const reqUrl = event.request.url;
-      const target = reqUrl.substring(reqUrl.indexOf('/virtual-game/') + 14);
+      if (!match) {
+        const keys = await cache.keys();
+        const reqUrl = event.request.url;
+        const target = reqUrl.substring(reqUrl.indexOf('/virtual-game/') + 14);
 
-      for (const req of keys) {
-        if (req.url.endsWith(target)) {
-          return await cache.match(req);
+        for (const req of keys) {
+          if (req.url.endsWith(target)) {
+            match = await cache.match(req);
+            break;
+          }
         }
+      }
+
+      if (match) {
+        const contentType = match.headers.get('Content-Type') || '';
+        const isHtml = contentType.includes('text/html') || url.pathname.endsWith('.html') || url.pathname.endsWith('.htm');
+
+        if (isHtml) {
+          let html = await match.text();
+          const securityScript = `<script>
+      // Sever untrusted parent/top traversal
+      try {
+        Object.defineProperty(window, 'parent', { value: window, writable: false, configurable: false });
+        Object.defineProperty(window, 'top', { value: window, writable: false, configurable: false });
+      } catch (e) {}
+    </script>`;
+
+          if (/<head[^>]*>/i.test(html)) {
+            html = html.replace(/(<head[^>]*>)/i, `$1
+${securityScript}`);
+          } else {
+            html = `${securityScript}
+${html}`;
+          }
+
+          const headers = new Headers(match.headers);
+          headers.delete('Content-Length');
+
+          return new Response(html, {
+            status: match.status,
+            statusText: match.statusText,
+            headers: headers
+          });
+        }
+
+        return match;
       }
 
       return new Response('404 Not Found in Virtual Game Storage', {
