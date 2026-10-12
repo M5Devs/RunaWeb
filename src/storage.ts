@@ -5,6 +5,7 @@ export interface SavedGame {
   zipData: ArrayBuffer;
   size: number;
   coverUrl?: string;
+  isSingleHtml?: boolean;
 }
 
 const DB_NAME = 'runaweb_db';
@@ -52,18 +53,19 @@ export async function saveGame(game: SavedGame): Promise<void> {
     try {
       const tx = db.transaction(STORE_NAME, 'readwrite');
       const store = tx.objectStore(STORE_NAME);
-      const request = store.put(game);
+      store.put(game);
 
-      request.onsuccess = () => resolve();
-      request.onerror = () => {
-        const err = request.error || new Error('Failed to store game in IndexedDB.');
-        reject(err);
+      tx.oncomplete = () => {
+        db.close();
+        resolve();
       };
       tx.onerror = () => {
         const err = tx.error || new Error('Transaction error in IndexedDB.');
+        db.close();
         reject(err);
       };
     } catch (err) {
+      db.close();
       reject(err);
     }
   });
@@ -72,35 +74,69 @@ export async function saveGame(game: SavedGame): Promise<void> {
 export async function getSavedGames(): Promise<SavedGame[]> {
   const db = await openDB();
   return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readonly');
-    const store = tx.objectStore(STORE_NAME);
-    const request = store.getAll();
+    try {
+      const tx = db.transaction(STORE_NAME, 'readonly');
+      const store = tx.objectStore(STORE_NAME);
+      const request = store.getAll();
 
-    request.onsuccess = () => resolve(request.result as SavedGame[]);
-    request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        db.close();
+        resolve(request.result as SavedGame[]);
+      };
+      request.onerror = () => {
+        db.close();
+        reject(request.error);
+      };
+    } catch (err) {
+      db.close();
+      reject(err);
+    }
   });
 }
 
 export async function loadGameById(id: string): Promise<SavedGame | undefined> {
   const db = await openDB();
   return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readonly');
-    const store = tx.objectStore(STORE_NAME);
-    const request = store.get(id);
+    try {
+      const tx = db.transaction(STORE_NAME, 'readonly');
+      const store = tx.objectStore(STORE_NAME);
+      const request = store.get(id);
 
-    request.onsuccess = () => resolve(request.result as SavedGame | undefined);
-    request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        db.close();
+        resolve(request.result as SavedGame | undefined);
+      };
+      request.onerror = () => {
+        db.close();
+        reject(request.error);
+      };
+    } catch (err) {
+      db.close();
+      reject(err);
+    }
   });
 }
 
 export async function deleteGame(id: string): Promise<void> {
   const db = await openDB();
   return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readwrite');
-    const store = tx.objectStore(STORE_NAME);
-    const request = store.delete(id);
+    try {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      store.delete(id);
 
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(request.error);
+      tx.oncomplete = () => {
+        db.close();
+        resolve();
+      };
+      tx.onerror = () => {
+        const err = tx.error || new Error('Transaction error in IndexedDB.');
+        db.close();
+        reject(err);
+      };
+    } catch (err) {
+      db.close();
+      reject(err);
+    }
   });
 }
