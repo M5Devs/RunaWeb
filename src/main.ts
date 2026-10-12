@@ -391,7 +391,7 @@ function extractGameTitle(normalizedMap: Record<string, Uint8Array>, entryPath: 
   } catch (err) {
     console.warn('Failed to extract title from index.html:', err);
   }
-  return defaultName.replace(/\.zip$/i, '');
+  return defaultName.replace(/\.(zip|html|htm)$/i, '');
 }
 
 function unzipAsync(uint8Array: Uint8Array): Promise<Unzipped> {
@@ -404,6 +404,54 @@ function unzipAsync(uint8Array: Uint8Array): Promise<Unzipped> {
       }
     });
   });
+}
+
+async function processHtmlBuffer(arrayBuffer: ArrayBuffer, fileName: string) {
+  showProgressModal('Processing Single HTML Game', 'Preparing game file...', 30);
+  statusEl.textContent = 'Preparing single HTML file...';
+
+  try {
+    const uint8Array = new Uint8Array(arrayBuffer);
+    const normalizedMap: Record<string, Uint8Array> = { 'index.html': uint8Array };
+    const entryPath = 'index.html';
+
+    const title = extractGameTitle(normalizedMap, entryPath, fileName);
+    activeGameName = title;
+    currentFileMap = normalizedMap;
+    currentEntryPath = entryPath;
+
+    updateProgressModal('Populating virtual cache...', 70);
+    await loadGame(normalizedMap, entryPath);
+
+    hideProgressModal();
+
+    const gameId = fileName.toLowerCase().replace(/[^a-z0-9_-]/g, '_') + '_' + Date.now();
+    const gameRecord: SavedGame = {
+      id: gameId,
+      name: title,
+      date: Date.now(),
+      zipData: arrayBuffer,
+      size: arrayBuffer.byteLength,
+      isSingleHtml: true
+    };
+
+    try {
+      await saveGame(gameRecord);
+      await refreshGameLibrary();
+    } catch (saveErr) {
+      console.error('Failed to save game to IndexedDB:', saveErr);
+      if (saveErr instanceof Error && (saveErr.name === 'QuotaExceededError' || saveErr.message.includes('QuotaExceededError'))) {
+        showToast('Storage full! Please delete some saved games from your library to free up space.');
+      } else {
+        showToast('Could not save game to local library.');
+      }
+    }
+  } catch (err) {
+    console.error('Error processing HTML file:', err);
+    hideProgressModal();
+    statusEl.textContent = 'Failed to load HTML file.';
+    showToast('Failed to load HTML file.');
+  }
 }
 
 async function processZipBuffer(arrayBuffer: ArrayBuffer, fileName: string) {
@@ -449,7 +497,7 @@ async function processZipBuffer(arrayBuffer: ArrayBuffer, fileName: string) {
     updateProgressModal('Populating virtual cache...', 75);
     await loadGame(normalizedMap, entryPath);
 
-    updateProgressModal('Ready! Launching game...', 100);
+    hideProgressModal();
 
     const gameId = fileName.toLowerCase().replace(/[^a-z0-9_-]/g, '_') + '_' + Date.now();
     const gameRecord: SavedGame = {
@@ -471,8 +519,6 @@ async function processZipBuffer(arrayBuffer: ArrayBuffer, fileName: string) {
       } else {
         showToast('Could not save game to local library.');
       }
-    } finally {
-      setTimeout(() => hideProgressModal(), 400);
     }
 
   } catch (err) {
@@ -532,7 +578,7 @@ async function loadGame(fileMap: Record<string, Uint8Array>, entryPath: string =
       const mimeType = getMimeType(normalizedPath);
 
       const fileUrl = new URL(`${import.meta.env.BASE_URL}virtual-game/${normalizedPath}`, window.location.origin).href;
-      const response = new Response(fileBuffer.buffer.slice(fileBuffer.byteOffset, fileBuffer.byteOffset + fileBuffer.byteLength) as ArrayBuffer, {
+      const response = new Response(fileBuffer.slice(), {
         headers: {
           'Content-Type': mimeType,
           'Content-Length': fileBuffer.byteLength.toString(),
@@ -540,13 +586,17 @@ async function loadGame(fileMap: Record<string, Uint8Array>, entryPath: string =
         }
       });
       cachePromises.push(
-        cache.put(fileUrl, response).then(() => {
-          cachedCount++;
-          if (totalFiles > 0 && loadingOverlay && !loadingOverlay.classList.contains('hidden')) {
-            const pct = 75 + Math.round((cachedCount / totalFiles) * 20);
-            updateProgressModal(`Populating virtual cache (${cachedCount}/${totalFiles})...`, pct);
-          }
-        })
+        cache.put(fileUrl, response)
+          .then(() => {
+            cachedCount++;
+            if (totalFiles > 0 && loadingOverlay && !loadingOverlay.classList.contains('hidden')) {
+              const pct = 75 + Math.round((cachedCount / totalFiles) * 20);
+              updateProgressModal(`Populating virtual cache (${cachedCount}/${totalFiles})...`, pct);
+            }
+          })
+          .catch((err) => {
+            console.error(`Cache put failed for ${fileUrl}:`, err);
+          })
       );
     }
   }
@@ -644,7 +694,14 @@ async function refreshGameLibrary() {
       const titleEl = document.createElement('div');
       titleEl.className = 'game-card-title';
       titleEl.title = game.name;
-      titleEl.textContent = game.name;
+      titleEl.appendChild(document.createTextNode(game.name));
+
+      if (game.isSingleHtml) {
+        const badge = document.createElement('span');
+        badge.className = 'badge-single-html';
+        badge.textContent = 'Single HTML';
+        titleEl.appendChild(badge);
+      }
 
       const metaEl = document.createElement('div');
       metaEl.className = 'game-card-meta';
@@ -689,20 +746,36 @@ async function refreshGameLibrary() {
         const game = await loadGameById(id);
         if (game) {
           try {
-            updateProgressModal('Decompressing game files...', 50);
-            const uint8Array = new Uint8Array(game.zipData);
-            const unzipped = await unzipAsync(uint8Array);
-            const { normalizedMap, entryPath } = processExtractedFiles(unzipped);
+            if (game.isSingleHtml) {
+              updateProgressModal('Preparing single HTML game...', 50);
+              const uint8Array = new Uint8Array(game.zipData);
+              const normalizedMap: Record<string, Uint8Array> = { 'index.html': uint8Array };
 
-            currentFileMap = normalizedMap;
-            currentEntryPath = entryPath;
-            activeGameName = game.name;
+              currentFileMap = normalizedMap;
+              currentEntryPath = 'index.html';
+              activeGameName = game.name;
 
-            updateProgressModal('Populating virtual cache...', 80);
-            await loadGame(normalizedMap, entryPath);
+              updateProgressModal('Populating virtual cache...', 80);
+              await loadGame(normalizedMap, 'index.html');
 
-            updateProgressModal('Ready! Launching game...', 100);
-            statusEl.textContent = `Playing ${game.name} from library.`;
+              updateProgressModal('Ready! Launching game...', 100);
+              statusEl.textContent = `Playing ${game.name} from library.`;
+            } else {
+              updateProgressModal('Decompressing game files...', 50);
+              const uint8Array = new Uint8Array(game.zipData);
+              const unzipped = await unzipAsync(uint8Array);
+              const { normalizedMap, entryPath } = processExtractedFiles(unzipped);
+
+              currentFileMap = normalizedMap;
+              currentEntryPath = entryPath;
+              activeGameName = game.name;
+
+              updateProgressModal('Populating virtual cache...', 80);
+              await loadGame(normalizedMap, entryPath);
+
+              updateProgressModal('Ready! Launching game...', 100);
+              statusEl.textContent = `Playing ${game.name} from library.`;
+            }
           } catch (err) {
             console.error('Failed to decompress saved game archive:', err);
             statusEl.textContent = 'Failed to decompress saved game.';
@@ -735,19 +808,33 @@ async function refreshGameLibrary() {
 }
 
 function handleFileSelect(file: File) {
-  if (!file.name.toLowerCase().endsWith('.zip')) {
-    statusEl.textContent = 'Please select a valid .zip file.';
-    showToast('Please select a valid .zip file.');
+  const name = file.name.toLowerCase();
+  if (name.endsWith('.html') || name.endsWith('.htm')) {
+    statusEl.textContent = `Reading ${file.name}...`;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      if (e.target?.result) {
+        processHtmlBuffer(e.target.result as ArrayBuffer, file.name);
+      }
+    };
+    reader.readAsArrayBuffer(file);
     return;
   }
-  statusEl.textContent = `Reading ${file.name}...`;
-  const reader = new FileReader();
-  reader.onload = (e) => {
-    if (e.target?.result) {
-      processZipBuffer(e.target.result as ArrayBuffer, file.name);
-    }
-  };
-  reader.readAsArrayBuffer(file);
+
+  if (name.endsWith('.zip')) {
+    statusEl.textContent = `Reading ${file.name}...`;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      if (e.target?.result) {
+        processZipBuffer(e.target.result as ArrayBuffer, file.name);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+    return;
+  }
+
+  statusEl.textContent = 'Please select a valid .zip or .html file.';
+  showToast('Please select a valid .zip or .html file.');
 }
 
 // Drag & Drop

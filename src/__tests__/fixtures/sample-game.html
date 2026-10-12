@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sample Canvas Bouncing Ball Game</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body, html {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #0d0f18;
+      font-family: system-ui, -apple-system, sans-serif;
+      color: #fff;
+    }
+    #canvas {
+      display: block;
+      width: 100vw;
+      height: 100vh;
+      background: radial-gradient(circle, #1a1c2e 0%, #0d0f18 100%);
+    }
+    #ui-layer {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      pointer-events: none;
+      background: rgba(0, 0, 0, 0.6);
+      padding: 10px 14px;
+      border-radius: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      font-size: 14px;
+    }
+    .key-badge {
+      display: inline-block;
+      padding: 2px 6px;
+      background: #333;
+      border-radius: 4px;
+      margin-right: 4px;
+      font-size: 12px;
+    }
+    .pressed {
+      background: #00f2fe;
+      color: #000;
+    }
+  </style>
+</head>
+<body>
+  <div id="ui-layer">
+    <h3>🎮 Sample HTML5 Game Fixture</h3>
+    <p>Last Key: <span id="last-key">None</span></p>
+    <p>Touch Count: <span id="touch-count">0</span></p>
+  </div>
+  <canvas id="canvas"></canvas>
+
+  <script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const lastKeyEl = document.getElementById('last-key');
+    const touchCountEl = document.getElementById('touch-count');
+
+    let width = canvas.width = window.innerWidth;
+    let height = canvas.height = window.innerHeight;
+
+    window.addEventListener('resize', () => {
+      width = canvas.width = window.innerWidth;
+      height = canvas.height = window.innerHeight;
+    });
+
+    let x = width / 2;
+    let y = height / 2;
+    let vx = 4;
+    let vy = 3;
+    const radius = 25;
+    let color = '#00f2fe';
+
+    // Keyboard Listeners
+    window.addEventListener('keydown', (e) => {
+      lastKeyEl.textContent = e.key || e.code;
+      if (e.key === 'ArrowLeft' || e.key === 'a') vx = -5;
+      if (e.key === 'ArrowRight' || e.key === 'd') vx = 5;
+      if (e.key === 'ArrowUp' || e.key === 'w') vy = -5;
+      if (e.key === 'ArrowDown' || e.key === 's') vy = 5;
+      if (e.key === ' ' || e.key === 'Spacebar') {
+        color = '#9d4edd';
+      }
+    });
+
+    window.addEventListener('keyup', (e) => {
+      if (e.key === ' ' || e.key === 'Spacebar') {
+        color = '#00f2fe';
+      }
+    });
+
+    // Touch Listeners
+    const handleTouch = (e) => {
+      touchCountEl.textContent = e.touches.length;
+      if (e.touches.length > 0) {
+        x = e.touches[0].clientX;
+        y = e.touches[0].clientY;
+        color = '#ff3366';
+      }
+    };
+
+    window.addEventListener('touchstart', handleTouch, { passive: true });
+    window.addEventListener('touchmove', handleTouch, { passive: true });
+    window.addEventListener('touchend', (e) => {
+      touchCountEl.textContent = e.touches.length;
+      color = '#00f2fe';
+    }, { passive: true });
+
+    function draw() {
+      ctx.clearRect(0, 0, width, height);
+
+      // Bounce against canvas boundaries
+      x += vx;
+      y += vy;
+
+      if (x - radius < 0 || x + radius > width) {
+        vx = -vx;
+        x = Math.max(radius, Math.min(width - radius, x));
+      }
+      if (y - radius < 0 || y + radius > height) {
+        vy = -vy;
+        y = Math.max(radius, Math.min(height - radius, y));
+      }
+
+      // Draw bouncing ball
+      ctx.beginPath();
+      ctx.arc(x, y, radius, 0, Math.PI * 2);
+      ctx.fillStyle = color;
+      ctx.shadowBlur = 15;
+      ctx.shadowColor = color;
+      ctx.fill();
+      ctx.closePath();
+
+      requestAnimationFrame(draw);
+    }
+
+    requestAnimationFrame(draw);
+  </script>
+</body>
+</html>
