@@ -210,10 +210,31 @@ function setupHudControls() {
   });
 }
 
+function sendHandshake() {
+  if (currentSessionToken) {
+    const handshakeMsg = { type: 'RUNAWEB_INIT_HANDSHAKE', sessionToken: currentSessionToken };
+    if (gameFrame && gameFrame.contentWindow) {
+      try {
+        gameFrame.contentWindow.postMessage(handshakeMsg, '*');
+      } catch (err) {
+        console.warn('Failed to post handshake to game frame:', err);
+      }
+    }
+    try {
+      window.postMessage(handshakeMsg, '*');
+    } catch (err) {
+      console.warn('Failed to post handshake to window:', err);
+    }
+  }
+}
+
 function configureIframeIsolation() {
   if (gameFrame) {
     gameFrame.referrerPolicy = 'no-referrer';
     gameFrame.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-pointer-lock allow-forms');
+    gameFrame.addEventListener('load', () => {
+      sendHandshake();
+    });
   }
 
   // Defensive global error handling for parent DOM traversal / cross-origin sandbox exceptions
@@ -234,8 +255,8 @@ const ALLOWED_IPC_TYPES = Object.freeze(['RUNAWEB_GAME_PAUSE', 'RUNAWEB_GAME_REL
 
 function setupMessageIsolation() {
   const handleHostMessage = (event: MessageEvent) => {
-    // Validate message source is from game iframe
-    if (gameFrame && event.source !== gameFrame.contentWindow) {
+    // Validate message source is from game iframe or host window
+    if (gameFrame && event.source !== gameFrame.contentWindow && event.source !== window) {
       return;
     }
 

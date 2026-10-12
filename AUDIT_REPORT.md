@@ -1,6 +1,6 @@
 # 👾 RunaWeb - System Audit & E2E Test Report
 
-**Date:** October 12, 2024
+**Date:** October 24, 2026
 **Project:** RunaWeb HTML5 Game Runner
 **Environment:** Linux x86_64, Chromium (Playwright v1.64.0), Vite 5.4, Vitest 1.6
 
@@ -24,6 +24,15 @@ RunaWeb has been enhanced with native support for **standalone single `.html` ga
 * **Extraction Time:** `~120ms` via `fflate`
 * **Virtual Asset Cache Population:** 100% successful (0 404 network errors across all relative sub-resources)
 * **Service Worker Cache Hits:** `100%` on sub-resource fetches (`/virtual-game/*`)
+
+---
+
+## 🔄 Continuous Integration & Automated E2E Pipeline
+
+Playwright E2E automation is strictly enforced in GitHub Actions CI (`.github/workflows/deploy.yml`):
+* **Browser Dependencies:** Automated headless Chromium installation via `npx playwright install --with-deps chromium`.
+* **Execution:** Automated run of `npm run test:e2e` prior to production build and deployment.
+* **Artifact Generation:** E2E screenshots automatically uploaded as GitHub Action artifacts (`e2e-screenshots`) on job completion.
 
 ---
 

@@ -1,3 +1,4 @@
+import { zipSync, unzipSync } from 'fflate';
 import { describe, it, expect } from 'vitest';
 import {
   normalizePath,
@@ -66,6 +67,23 @@ describe('Engine Unit Tests', () => {
           'SecurityError: Path traversal sequence detected in archive'
         );
       }
+    });
+
+    it('should synthesize an offensive Zip-Slip archive buffer using fflate.zipSync and throw SecurityError on extraction', () => {
+      // Synthesize actual binary ZIP archive with path traversal entries
+      const maliciousZipBuffer = zipSync({
+        '../../evil.js': new Uint8Array([1, 2, 3]),
+        'sub/../../escape.txt': new Uint8Array([4]),
+        'index.html': new Uint8Array([5, 6])
+      });
+
+      // Decompress the synthesized binary zip
+      const unzipped = unzipSync(maliciousZipBuffer);
+
+      // Assert that passing through the extraction pipeline throws SecurityError
+      expect(() => processExtractedFiles(unzipped)).toThrow(
+        'SecurityError: Path traversal sequence detected in archive'
+      );
     });
   });
 

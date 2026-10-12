@@ -142,16 +142,43 @@ test.describe('RunaWeb E2E & Verification Suite', () => {
     const sandboxAttr = await iframe.getAttribute('sandbox');
     expect(sandboxAttr).toBe('allow-scripts allow-same-origin allow-pointer-lock allow-forms');
 
-    // Test IPC session token security validation in client scope
-    const ipcValid = await page.evaluate(() => {
-      // @ts-ignore
-      const testToken = 'test-token-12345';
-      // Mismatched token test
-      const invalidResult = (window as any).validateIPCMessage
-        ? (window as any).validateIPCMessage({ type: 'RUNAWEB_GAME_PAUSE', sessionToken: 'wrong' }, testToken)
-        : false;
-      return !invalidResult;
+    // Register listener for initial handshake message BEFORE setting input file
+    const sessionTokenPromise = page.evaluate(() => {
+      return new Promise<string>((resolve) => {
+        const handler = (event: MessageEvent) => {
+          if (event.data && event.data.type === 'RUNAWEB_INIT_HANDSHAKE' && event.data.sessionToken) {
+            window.removeEventListener('message', handler);
+            resolve(event.data.sessionToken);
+          }
+        };
+        window.addEventListener('message', handler);
+      });
     });
-    expect(ipcValid).toBe(true);
+
+    // Upload and launch a game to trigger handshake
+    const sampleHtmlPath = path.resolve('src/__tests__/fixtures/sample-game.html');
+    await page.locator('#file-input').setInputFiles(sampleHtmlPath);
+    await expect(page.locator('body')).toHaveClass(/is-playing/, { timeout: 10000 });
+
+    const sessionToken = await sessionTokenPromise;
+    expect(typeof sessionToken).toBe('string');
+    expect(sessionToken.length).toBeGreaterThan(0);
+
+    const pauseOverlay = page.locator('#pause-overlay');
+    await expect(pauseOverlay).not.toHaveClass(/visible/);
+
+    // 1. Send an IPC message with a mismatched / fake token -> assert it is rejected / ignored by host
+    await page.evaluate(() => {
+      window.postMessage({ type: 'RUNAWEB_GAME_PAUSE', sessionToken: 'fake-mismatched-token-9999' }, '*');
+    });
+    await page.waitForTimeout(300);
+    await expect(pauseOverlay).not.toHaveClass(/visible/);
+
+    // 2. Send an IPC message with the correct matching token -> assert it is accepted and processed by host
+    await page.evaluate((validToken) => {
+      window.postMessage({ type: 'RUNAWEB_GAME_PAUSE', sessionToken: validToken }, '*');
+    }, sessionToken);
+    await page.waitForTimeout(300);
+    await expect(pauseOverlay).toHaveClass(/visible/);
   });
 });
