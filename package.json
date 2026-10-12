@@ -1,7 +1,7 @@
 {
   "name": "runaweb",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
   "type": "module",
   "license": "GPL-3.0",
   "scripts": {
@@ -9,13 +9,15 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "tauri": "tauri"
   },
   "dependencies": {
     "fflate": "^0.8.2"
   },
   "devDependencies": {
     "@playwright/test": "^1.64.0",
+    "@tauri-apps/cli": "^2.0.0",
     "typescript": "^5.4.0",
     "vite": "^5.2.0",
     "vitest": "^1.6.0"
