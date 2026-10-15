@@ -45,6 +45,12 @@ const virtualGamepad = document.getElementById('virtual-gamepad') as HTMLDivElem
 const libraryGrid = document.getElementById('library-grid') as HTMLDivElement;
 const toastContainer = document.getElementById('toast-container') as HTMLDivElement;
 
+// Resume Banner Elements
+const resumeBanner = document.getElementById('resume-banner') as HTMLDivElement;
+const resumeGameTitle = document.getElementById('resume-game-title') as HTMLSpanElement;
+const resumeGameBtn = document.getElementById('resume-game-btn') as HTMLButtonElement;
+const terminateGameBtn = document.getElementById('terminate-game-btn') as HTMLButtonElement;
+
 // Progress Loading Modal Elements
 const loadingOverlay = document.getElementById('loading-overlay') as HTMLDivElement;
 const loadingTitle = document.getElementById('loading-title') as HTMLHeadingElement;
@@ -72,6 +78,15 @@ const baseUrl = import.meta.env.BASE_URL.endsWith('/')
   : import.meta.env.BASE_URL + '/';
 
 let erudaActive = false;
+
+interface SuspendedGame {
+  title: string;
+  fileMap: Record<string, Uint8Array> | null;
+  entryPath: string;
+  timestamp: number;
+}
+
+let activeSuspendedGame: SuspendedGame | null = null;
 
 // HUD Auto-Hide & Collapse State
 let autoHideTimer: number | null = null;
@@ -288,6 +303,89 @@ function setupMessageIsolation() {
   window.addEventListener('message', handleHostMessage);
 }
 
+function pauseIframeAudioAndLoop() {
+  try {
+    const win = gameFrame.contentWindow as Window | null;
+    if (win) {
+      const audios = win.document.querySelectorAll('audio, video');
+      audios.forEach((a) => (a as HTMLMediaElement).pause());
+      if (!win.__runa_orig_raf) {
+        win.__runa_orig_raf = win.requestAnimationFrame;
+        win.requestAnimationFrame = () => 0;
+      }
+    }
+  } catch (err) {
+    console.warn('Iframe suspend pause notice:', err);
+  }
+}
+
+function resumeIframeAudioAndLoop() {
+  try {
+    const win = gameFrame.contentWindow as Window | null;
+    if (win) {
+      if (win.__runa_orig_raf) {
+        win.requestAnimationFrame = win.__runa_orig_raf;
+        delete win.__runa_orig_raf;
+      }
+      if (!isPaused) {
+        const audios = win.document.querySelectorAll('audio, video');
+        audios.forEach((a) => (a as HTMLMediaElement).play().catch(() => {}));
+      }
+    }
+  } catch (err) {
+    console.warn('Iframe resume notice:', err);
+  }
+}
+
+function suspendGame() {
+  if (currentMode !== 'theater') return;
+
+  activeSuspendedGame = {
+    title: activeGameName,
+    fileMap: currentFileMap,
+    entryPath: currentEntryPath,
+    timestamp: Date.now()
+  };
+
+  pauseIframeAudioAndLoop();
+
+  if (resumeGameTitle) {
+    resumeGameTitle.textContent = activeSuspendedGame.title;
+  }
+  if (resumeBanner) {
+    resumeBanner.classList.remove('hidden');
+  }
+
+  setViewMode('hub');
+}
+
+function resumeGame() {
+  if (!activeSuspendedGame) return;
+
+  if (resumeBanner) {
+    resumeBanner.classList.add('hidden');
+  }
+
+  setViewMode('theater');
+  resumeIframeAudioAndLoop();
+}
+
+function terminateGame() {
+  activeSuspendedGame = null;
+  if (resumeBanner) {
+    resumeBanner.classList.add('hidden');
+  }
+
+  currentSessionToken = null;
+  currentFileMap = null;
+  gameFrame.src = 'about:blank';
+
+  if (currentMode === 'hub') {
+    reloadBtn.disabled = true;
+    fullscreenBtn.disabled = true;
+  }
+}
+
 function setViewMode(mode: 'hub' | 'theater') {
   currentMode = mode;
   if (mode === 'theater') {
@@ -299,6 +397,8 @@ function setViewMode(mode: 'hub' | 'theater') {
     fastForwardBtn.disabled = false;
     aspectBtn.disabled = false;
     crtBtn.disabled = false;
+    reloadBtn.disabled = false;
+    fullscreenBtn.disabled = false;
 
     isHeaderPinned = false;
     expandHeader();
@@ -322,8 +422,6 @@ function setViewMode(mode: 'hub' | 'theater') {
     }
     appHeader.classList.remove('hud-collapsed', 'hud-hidden');
 
-    currentSessionToken = null;
-    gameFrame.src = 'about:blank';
     reloadBtn.disabled = true;
     fullscreenBtn.disabled = true;
   }
@@ -580,6 +678,9 @@ function getMimeType(filePath: string): string {
 }
 
 async function loadGame(fileMap: Record<string, Uint8Array>, entryPath: string = 'index.html') {
+  if (activeSuspendedGame) {
+    terminateGame();
+  }
   const sessionToken = generateSessionToken();
   currentSessionToken = sessionToken;
   currentEntryPath = entryPath;
@@ -889,7 +990,19 @@ if (fileInput) {
 
 if (exitBtn) {
   exitBtn.addEventListener('click', () => {
-    setViewMode('hub');
+    suspendGame();
+  });
+}
+
+if (resumeGameBtn) {
+  resumeGameBtn.addEventListener('click', () => {
+    resumeGame();
+  });
+}
+
+if (terminateGameBtn) {
+  terminateGameBtn.addEventListener('click', () => {
+    terminateGame();
   });
 }
 
