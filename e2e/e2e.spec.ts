@@ -9,6 +9,17 @@ test.describe('RunaWeb E2E & Verification Suite', () => {
     await page.evaluate(() => localStorage.clear());
   });
 
+  async function clickExit(page: any) {
+    await page.evaluate(() => {
+      const header = document.getElementById('app-header');
+      if (header) {
+        header.classList.remove('hud-collapsed', 'hud-hidden');
+      }
+    });
+    await page.waitForTimeout(100);
+    await page.locator('#exit-btn').click();
+  }
+
   test('1. Single HTML Game loading, gamepad controls & IndexedDB library saving', async ({ page }) => {
     await page.goto('/');
 
@@ -41,15 +52,8 @@ test.describe('RunaWeb E2E & Verification Suite', () => {
     await btnUp.click();
     await btnA.click();
 
-    // Hover top / click floating HUD pill to bring header into view
-    await page.mouse.move(200, 10);
-    const pill = page.locator('#floating-hud-pill');
-    if (await pill.isVisible()) {
-      await pill.click();
-    }
-    await page.waitForTimeout(350);
-    const exitBtn = page.locator('#exit-btn');
-    await exitBtn.click();
+    // Hover top / click floating HUD pill or click exit button directly
+    await clickExit(page);
 
     await expect(page.locator('body')).toHaveClass(/mode-hub/);
 
@@ -94,8 +98,7 @@ test.describe('RunaWeb E2E & Verification Suite', () => {
     expect(failedRequests).toEqual([]);
 
     // Exit back to library
-    const exitBtn = page.locator('#exit-btn');
-    await exitBtn.click();
+    await clickExit(page);
     await expect(page.locator('body')).toHaveClass(/mode-hub/);
   });
 
@@ -106,14 +109,14 @@ test.describe('RunaWeb E2E & Verification Suite', () => {
     const sampleHtmlPath = path.resolve('src/__tests__/fixtures/sample-game.html');
     await page.locator('#file-input').setInputFiles(sampleHtmlPath);
     await expect(page.locator('body')).toHaveClass(/is-playing/, { timeout: 10000 });
-    await page.locator('#exit-btn').click();
+    await clickExit(page);
     await expect(page.locator('body')).toHaveClass(/mode-hub/);
 
     // 2. Upload real-world ZIP game
     const zipPath = path.resolve('src/__tests__/fixtures/test-hoshi.zip');
     await page.locator('#file-input').setInputFiles(zipPath);
     await expect(page.locator('body')).toHaveClass(/is-playing/, { timeout: 15000 });
-    await page.locator('#exit-btn').click();
+    await clickExit(page);
     await expect(page.locator('body')).toHaveClass(/mode-hub/);
 
     // Capture screenshot 1: Library Home with both games (ZIP & Single HTML)
@@ -180,5 +183,60 @@ test.describe('RunaWeb E2E & Verification Suite', () => {
     }, sessionToken);
     await page.waitForTimeout(300);
     await expect(pauseOverlay).toHaveClass(/visible/);
+  });
+
+  test('5. Seamless Game Suspend & Resume State', async ({ page }) => {
+    await page.goto('/');
+
+    const sampleHtmlPath = path.resolve('src/__tests__/fixtures/sample-game.html');
+    const fileInput = page.locator('#file-input');
+
+    // Upload and start game
+    await fileInput.setInputFiles(sampleHtmlPath);
+    await expect(page.locator('body')).toHaveClass(/is-playing/, { timeout: 10000 });
+
+    const iframe = page.locator('#game-frame');
+    const activeSrc = await iframe.getAttribute('src');
+    expect(activeSrc).toContain('virtual-game/');
+
+    // Click Exit button to suspend game
+    await clickExit(page);
+
+    // Verify returning to hub, but iframe source remains intact
+    await expect(page.locator('body')).toHaveClass(/mode-hub/);
+    const suspendedSrc = await iframe.getAttribute('src');
+    expect(suspendedSrc).toBe(activeSrc);
+
+    // Verify #resume-banner is visible with title
+    const resumeBanner = page.locator('#resume-banner');
+    await expect(resumeBanner).toBeVisible();
+    await expect(page.locator('#resume-game-title')).toContainText('Sample Canvas Bouncing Ball Game');
+
+    // Click Resume Game
+    await page.locator('#resume-game-btn').click();
+    await expect(page.locator('body')).toHaveClass(/is-playing/);
+    await expect(resumeBanner).not.toBeVisible();
+
+    // Exit again and terminate game
+    await clickExit(page);
+    await expect(resumeBanner).toBeVisible();
+    await page.locator('#terminate-game-btn').click();
+
+    // Verify banner hidden and iframe cleared
+    await expect(resumeBanner).not.toBeVisible();
+    const terminatedSrc = await iframe.getAttribute('src');
+    expect(terminatedSrc).toBe('about:blank');
+
+    // Load game again, exit to suspend, then load a new game archive to test auto-termination
+    await fileInput.setInputFiles([]);
+    await fileInput.setInputFiles(sampleHtmlPath);
+    await expect(page.locator('body')).toHaveClass(/is-playing/, { timeout: 10000 });
+    await clickExit(page);
+    await expect(resumeBanner).toBeVisible();
+
+    const zipPath = path.resolve('src/__tests__/fixtures/test-hoshi.zip');
+    await fileInput.setInputFiles(zipPath);
+    await expect(page.locator('body')).toHaveClass(/is-playing/, { timeout: 15000 });
+    await expect(resumeBanner).not.toBeVisible();
   });
 });

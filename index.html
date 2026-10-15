@@ -515,6 +515,106 @@
         min-height: 1.2rem;
       }
 
+      /* Resume Banner Styles */
+      .resume-banner {
+        background: rgba(18, 20, 29, 0.85);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        border: 1px solid var(--neon-cyan);
+        border-radius: 20px;
+        padding: 1rem 1.5rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 1rem;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 0 20px rgba(0, 242, 254, 0.2);
+        transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        flex-wrap: wrap;
+      }
+
+      .resume-banner.hidden {
+        display: none !important;
+      }
+
+      .resume-banner-info {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        font-size: 1rem;
+        font-weight: 600;
+      }
+
+      .resume-pulse {
+        width: 10px;
+        height: 10px;
+        background-color: var(--neon-cyan);
+        border-radius: 50%;
+        box-shadow: 0 0 10px var(--neon-cyan);
+        animation: pulseGlow 1.5s infinite ease-in-out;
+      }
+
+      @keyframes pulseGlow {
+        0%, 100% {
+          transform: scale(1);
+          opacity: 1;
+          box-shadow: 0 0 10px var(--neon-cyan);
+        }
+        50% {
+          transform: scale(1.4);
+          opacity: 0.6;
+          box-shadow: 0 0 20px var(--neon-cyan);
+        }
+      }
+
+      .resume-banner-label {
+        color: var(--text-muted);
+        font-size: 0.9rem;
+      }
+
+      .resume-game-title {
+        color: var(--text-primary);
+        font-weight: 700;
+      }
+
+      .resume-banner-actions {
+        display: flex;
+        gap: 0.75rem;
+        align-items: center;
+      }
+
+      .btn-resume {
+        background: linear-gradient(135deg, var(--neon-cyan), var(--neon-violet));
+        color: #ffffff;
+        padding: 0.5rem 1.25rem;
+        border-radius: 50px;
+        font-weight: 700;
+        font-size: 0.9rem;
+        border: none;
+        box-shadow: 0 0 15px rgba(0, 242, 254, 0.3);
+      }
+
+      .btn-resume:hover:not(:disabled) {
+        transform: translateY(-1px) scale(1.03);
+        box-shadow: 0 0 25px rgba(0, 242, 254, 0.5);
+      }
+
+      .btn-terminate {
+        background: rgba(255, 0, 85, 0.12);
+        border: 1px solid rgba(255, 0, 85, 0.3);
+        color: #ff4d8d;
+        padding: 0.5rem 1rem;
+        border-radius: 50px;
+        font-size: 0.85rem;
+        font-weight: 600;
+      }
+
+      .btn-terminate:hover:not(:disabled) {
+        background: rgba(255, 0, 85, 0.25);
+        border-color: var(--danger);
+        color: #fff;
+        box-shadow: 0 0 15px rgba(255, 0, 85, 0.4);
+      }
+
       /* Arcade Shelf Library */
       .library-section {
         display: flex;
@@ -1106,6 +1206,23 @@
     <main>
       <!-- Hub / Home View State -->
       <div class="hub-view">
+        <!-- Resume Active Game Banner -->
+        <div id="resume-banner" class="resume-banner hidden">
+          <div class="resume-banner-info">
+            <span class="resume-pulse"></span>
+            <span class="resume-banner-label">Currently Playing:</span>
+            <span id="resume-game-title" class="resume-game-title">Game Title</span>
+          </div>
+          <div class="resume-banner-actions">
+            <button id="resume-game-btn" class="btn btn-resume">
+              ▶ Resume Game
+            </button>
+            <button id="terminate-game-btn" class="btn btn-terminate" title="Terminate / Close Game">
+              ⏹ Terminate / Close Game
+            </button>
+          </div>
+        </div>
+
         <!-- Futuristic Hero Dropzone -->
         <div class="dropzone-wrapper">
           <div id="dropzone">
