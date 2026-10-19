@@ -40,4 +40,27 @@ describe('WASM-4 Engine & Cartridge Unit Tests', () => {
     expect(html).toContain('diskw(');
     expect(html).toContain('trace(');
   });
+
+  it('should generate complete WASM-4 Web Audio APU synthesizer logic', () => {
+    const html = generateWasm4Html();
+
+    // Verify Web Audio APU initialization & gesture unlocking
+    expect(html).toContain('initAudio()');
+    expect(html).toContain('pointerdown');
+    expect(html).toContain('touchstart');
+    expect(html).toContain('keydown');
+
+    // Verify Pulse 1 & 2 duty cycles support
+    expect(html).toContain('getPulseWave(');
+    expect(html).toContain('createPeriodicWave');
+
+    // Verify LFSR Noise channel (15-bit white noise and 7-bit buzzy mode)
+    expect(html).toContain('createNoiseBuffer(');
+    expect(html).toContain('buzzyNoiseBuf');
+    expect(html).toContain('whiteNoiseBuf');
+
+    // Verify ADSR envelopes and stereo panning
+    expect(html).toContain('linearRampToValueAtTime');
+    expect(html).toContain('createStereoPanner');
+  });
 });
