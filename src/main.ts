@@ -229,6 +229,16 @@ function setupHudControls() {
   });
 }
 
+function unlockIframeAudio() {
+  try {
+    if (gameFrame && gameFrame.contentWindow) {
+      gameFrame.contentWindow.postMessage({ type: 'RUNAWEB_AUDIO_UNLOCK' }, '*');
+    }
+  } catch (err) {
+    console.warn('Failed to send audio unlock message to game frame:', err);
+  }
+}
+
 function sendHandshake() {
   if (currentSessionToken) {
     const handshakeMsg = { type: 'RUNAWEB_INIT_HANDSHAKE', sessionToken: currentSessionToken };
@@ -1398,6 +1408,7 @@ interface KeyMapping {
 const touchEditor = setupTouchEditorModal({ showToast });
 
 function dispatchKeyEvent(type: 'keydown' | 'keyup', mapping: KeyMapping) {
+  unlockIframeAudio();
   try {
     const targetWindow = gameFrame.contentWindow;
     const targetDocument = gameFrame.contentDocument;
@@ -1431,6 +1442,7 @@ function dispatchKeyEvent(type: 'keydown' | 'keyup', mapping: KeyMapping) {
 }
 
 function handleButtonPress(btnKey: string, type: 'keydown' | 'keyup') {
+  unlockIframeAudio();
   const bindings = getKeybindings();
   const mappings = bindings[btnKey as InputAction];
   if (mappings && Array.isArray(mappings)) {
@@ -1443,6 +1455,9 @@ function setupVirtualGamepad() {
 
   if (virtualGamepad) {
     applyTouchLayoutToDOM(virtualGamepad);
+    ['touchstart', 'pointerdown', 'mousedown', 'click'].forEach((evt) => {
+      virtualGamepad.addEventListener(evt, () => unlockIframeAudio(), { passive: true });
+    });
   }
 
   if (isTouchDevice && !gamepadManager.isConnected) {
@@ -1460,6 +1475,9 @@ function setupVirtualGamepad() {
     openTouchEditorBtn.addEventListener('click', () => {
       const controlsModal = document.getElementById('controls-modal');
       if (controlsModal) controlsModal.classList.add('hidden');
+      if (!isPaused) {
+        togglePause();
+      }
       touchEditor.open();
     });
   }
@@ -1471,12 +1489,15 @@ function setupVirtualGamepad() {
     if (!btnKey) return;
 
     const handleStart = (e: Event) => {
+      unlockIframeAudio();
+      if (virtualGamepad.classList.contains('editing') || touchEditor.isEditing()) return;
       e.preventDefault();
       btn.classList.add('pressed');
       handleButtonPress(btnKey, 'keydown');
     };
 
     const handleEnd = (e: Event) => {
+      if (virtualGamepad.classList.contains('editing') || touchEditor.isEditing()) return;
       e.preventDefault();
       btn.classList.remove('pressed');
       handleButtonPress(btnKey, 'keyup');
@@ -1487,18 +1508,22 @@ function setupVirtualGamepad() {
     btn.addEventListener('touchcancel', handleEnd, { passive: false });
 
     btn.addEventListener('mousedown', (e) => {
+      unlockIframeAudio();
+      if (virtualGamepad.classList.contains('editing') || touchEditor.isEditing()) return;
       e.preventDefault();
       btn.classList.add('pressed');
       handleButtonPress(btnKey, 'keydown');
     });
 
     btn.addEventListener('mouseup', (e) => {
+      if (virtualGamepad.classList.contains('editing') || touchEditor.isEditing()) return;
       e.preventDefault();
       btn.classList.remove('pressed');
       handleButtonPress(btnKey, 'keyup');
     });
 
     btn.addEventListener('mouseleave', (e) => {
+      if (virtualGamepad.classList.contains('editing') || touchEditor.isEditing()) return;
       if (btn.classList.contains('pressed')) {
         e.preventDefault();
         btn.classList.remove('pressed');
