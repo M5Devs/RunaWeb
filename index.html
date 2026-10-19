@@ -295,6 +295,175 @@
         box-shadow: 0 0 12px rgba(0, 242, 254, 0.6);
       }
 
+
+      /* Key Mapping & Virtual Keyboard Styles */
+      .controls-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 0.75rem;
+        margin-top: 1rem;
+        max-height: 320px;
+        overflow-y: auto;
+        padding-right: 4px;
+      }
+
+      .control-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        padding: 0.5rem 0.75rem;
+        border-radius: 8px;
+      }
+
+      .control-label {
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: var(--text-primary);
+      }
+
+      .key-bind-btn {
+        background: rgba(0, 242, 254, 0.1);
+        border: 1px solid rgba(0, 242, 254, 0.3);
+        color: var(--neon-cyan);
+        font-family: monospace;
+        font-size: 0.8rem;
+        padding: 0.25rem 0.6rem;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+      }
+
+      .key-bind-btn:hover, .key-bind-btn.listening {
+        background: rgba(0, 242, 254, 0.25);
+        border-color: var(--neon-cyan);
+        box-shadow: 0 0 10px rgba(0, 242, 254, 0.4);
+      }
+
+      .key-bind-btn.listening {
+        color: #fff;
+        animation: pulse 1s infinite alternate;
+      }
+
+      /* Virtual Keyboard Container */
+      #virtual-keyboard {
+        position: absolute;
+        bottom: 12px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 40;
+        width: min(96vw, 740px);
+        background: rgba(10, 15, 25, 0.88);
+        backdrop-filter: blur(14px);
+        border: 1px solid rgba(0, 242, 254, 0.3);
+        border-radius: 12px;
+        padding: 8px 12px 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        user-select: none;
+        box-shadow: 0 10px 32px rgba(0, 0, 0, 0.7);
+        touch-action: none;
+      }
+
+      #virtual-keyboard.hidden {
+        display: none !important;
+      }
+
+      .vkey-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding-bottom: 4px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      }
+
+      .vkey-title {
+        font-size: 0.75rem;
+        font-weight: 700;
+        color: var(--neon-cyan);
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+      }
+
+      .vkey-close {
+        background: none;
+        border: none;
+        color: var(--text-secondary);
+        font-size: 1rem;
+        cursor: pointer;
+        padding: 2px 6px;
+      }
+
+      .vkey-close:hover {
+        color: var(--text-primary);
+      }
+
+      .vkey-row {
+        display: flex;
+        justify-content: center;
+        gap: 4px;
+        width: 100%;
+      }
+
+      .vkey {
+        flex: 1;
+        min-width: 0;
+        height: 38px;
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        color: var(--text-primary);
+        font-family: inherit;
+        font-size: 0.85rem;
+        font-weight: 600;
+        border-radius: 6px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: background 0.1s, transform 0.05s, border-color 0.1s;
+      }
+
+      .vkey:active, .vkey.pressed {
+        background: rgba(0, 242, 254, 0.3) !important;
+        border-color: var(--neon-cyan) !important;
+        color: #fff !important;
+        transform: scale(0.95);
+      }
+
+      .vkey-wide {
+        flex: 1.5;
+      }
+
+      .vkey-space {
+        flex: 4;
+      }
+
+      .vkey-special {
+        background: rgba(157, 78, 221, 0.15);
+        border-color: rgba(157, 78, 221, 0.3);
+        color: #c77dff;
+      }
+
+      .active-modifier {
+        background: rgba(0, 242, 254, 0.35) !important;
+        border-color: var(--neon-cyan) !important;
+        color: #fff !important;
+        box-shadow: 0 0 10px rgba(0, 242, 254, 0.5) !important;
+      }
+
+      .vkey-fn {
+        height: 28px !important;
+        font-size: 0.72rem !important;
+        background: rgba(255, 255, 255, 0.04);
+      }
+
+      .vkey-arrow {
+        background: rgba(0, 242, 254, 0.12);
+        color: var(--neon-cyan);
+      }
+
       .modal-header {
         display: flex;
         justify-content: space-between;
@@ -713,6 +882,21 @@
         margin-bottom: 0.5rem;
       }
 
+
+      .badge-wasm4 {
+        display: inline-block;
+        background: rgba(134, 192, 108, 0.25);
+        border: 1px solid rgba(134, 192, 108, 0.5);
+        color: #86c06c;
+        font-size: 0.68rem;
+        font-weight: 700;
+        padding: 0.15rem 0.5rem;
+        border-radius: 9999px;
+        margin-left: 0.4rem;
+        vertical-align: middle;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+      }
 
       .badge-single-html {
         display: inline-block;
@@ -1162,6 +1346,12 @@
         <button id="saves-toggle-btn" class="btn" title="Save State Manager">
           💾 Saves
         </button>
+        <button id="controls-toggle-btn" class="btn" title="Key Mapping Controls">
+          ⚙️ Controls
+        </button>
+        <button id="keyboard-toggle-btn" class="btn" title="Toggle On-Screen Virtual Keyboard">
+          ⌨️ Keyboard
+        </button>
         <button id="gamepad-toggle-btn" class="btn" title="Toggle Virtual Gamepad">
           🎮 Gamepad
         </button>
@@ -1229,12 +1419,12 @@
             <svg class="dropzone-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
             </svg>
-            <h2 class="dropzone-title">Drop HTML5 Game (.zip, .html) Here</h2>
+            <h2 class="dropzone-title">Drop HTML5 or WASM-4 Game (.zip, .html, .wasm) Here</h2>
             <p class="dropzone-subtitle">Instant, high-performance in-memory execution</p>
             <label for="file-input" class="file-select-btn">
-              <span>Select Game File (.zip, .html)</span>
+              <span>Select Game File (.zip, .html, .wasm)</span>
             </label>
-            <input type="file" id="file-input" accept=".zip,.html,.htm" />
+            <input type="file" id="file-input" accept=".zip,.html,.htm,.wasm" />
             <div id="status"></div>
           </div>
         </div>
@@ -1271,6 +1461,15 @@
           <span>GAME PAUSED</span>
         </div>
 
+        <!-- On-Screen Virtual QWERTY Keyboard Overlay -->
+        <div id="virtual-keyboard" class="hidden">
+          <div class="vkey-header">
+            <span class="vkey-title">⌨️ Virtual Keyboard</span>
+            <button id="close-keyboard-btn" class="vkey-close" title="Close Keyboard">✕</button>
+          </div>
+          <div id="vkey-rows-container"></div>
+        </div>
+
         <!-- Virtual Gamepad Overlay -->
         <div id="virtual-gamepad" class="hidden">
           <div class="dpad-container">
@@ -1294,6 +1493,29 @@
         </div>
       </div>
     </main>
+
+    <!-- Custom Key Mapping Glass Modal -->
+    <div id="controls-modal" class="modal-backdrop hidden">
+      <div class="modal-card">
+        <div class="modal-header">
+          <div class="modal-title">
+            <span>⚙️</span> Custom Key Mapping
+          </div>
+          <button id="close-controls-modal" class="btn-modal-close" title="Close">✕</button>
+        </div>
+        <div class="modal-body">
+          <p class="modal-description">
+            Click any input action button to rebind its physical keyboard key persistently.
+          </p>
+          <div id="controls-grid" class="controls-grid"></div>
+          <div style="margin-top: 1rem; display: flex; justify-content: flex-end;">
+            <button id="reset-controls-btn" class="btn-save-action" style="flex: none; padding: 0.5rem 1rem;">
+              <span>🔄 Reset to Defaults</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <!-- Save State Manager Glass Modal -->
     <div id="save-modal" class="modal-backdrop hidden">

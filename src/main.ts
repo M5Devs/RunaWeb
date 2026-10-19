@@ -1,3 +1,6 @@
+import { VirtualKeyboardManager } from './keyboard';
+import { getKeybindings, InputAction, setupControlsModal } from './controls';
+import { generateWasm4Html, isWasm4File } from './wasm4';
 import { unzip, Unzipped } from 'fflate';
 import { saveGame, getSavedGames, loadGameById, deleteGame, SavedGame } from './storage';
 import { PhysicalGamepadManager } from './gamepad';
@@ -525,6 +528,60 @@ function unzipAsync(uint8Array: Uint8Array): Promise<Unzipped> {
   });
 }
 
+async function processWasmBuffer(arrayBuffer: ArrayBuffer, fileName: string) {
+  showProgressModal('Processing WASM-4 Cartridge', 'Generating WASM-4 micro-runtime...', 30);
+  statusEl.textContent = 'Preparing WASM-4 cartridge...';
+
+  try {
+    const wasmBytes = new Uint8Array(arrayBuffer);
+    const htmlRuntimeStr = generateWasm4Html();
+    const htmlBytes = new TextEncoder().encode(htmlRuntimeStr);
+
+    const normalizedMap: Record<string, Uint8Array> = {
+      'cart.wasm': wasmBytes,
+      'index.html': htmlBytes
+    };
+    const entryPath = 'index.html';
+
+    const cleanTitle = fileName.replace(/\.wasm$/i, '').replace(/[-_]/g, ' ').trim() || 'WASM-4 Game';
+    activeGameName = cleanTitle;
+    currentFileMap = normalizedMap;
+    currentEntryPath = entryPath;
+
+    updateProgressModal('Populating virtual cache...', 70);
+    await loadGame(normalizedMap, entryPath);
+
+    hideProgressModal();
+
+    const gameId = 'wasm4_' + fileName.toLowerCase().replace(/[^a-z0-9_-]/g, '_') + '_' + Date.now();
+    const gameRecord: SavedGame = {
+      id: gameId,
+      name: cleanTitle,
+      date: Date.now(),
+      zipData: arrayBuffer,
+      size: arrayBuffer.byteLength,
+      isWasm4: true
+    };
+
+    try {
+      await saveGame(gameRecord);
+      await refreshGameLibrary();
+    } catch (saveErr) {
+      console.error('Failed to save WASM-4 game to IndexedDB:', saveErr);
+      if (saveErr instanceof Error && (saveErr.name === 'QuotaExceededError' || saveErr.message.includes('QuotaExceededError'))) {
+        showToast('Storage full! Please delete some saved games from your library to free up space.');
+      } else {
+        showToast('Could not save WASM-4 game to local library.');
+      }
+    }
+  } catch (err) {
+    console.error('Error processing WASM-4 cartridge:', err);
+    hideProgressModal();
+    statusEl.textContent = 'Failed to load WASM-4 cartridge.';
+    showToast('Failed to load WASM-4 cartridge.');
+  }
+}
+
 async function processHtmlBuffer(arrayBuffer: ArrayBuffer, fileName: string) {
   showProgressModal('Processing Single HTML Game', 'Preparing game file...', 30);
   statusEl.textContent = 'Preparing single HTML file...';
@@ -818,7 +875,12 @@ async function refreshGameLibrary() {
       titleEl.title = game.name;
       titleEl.appendChild(document.createTextNode(game.name));
 
-      if (game.isSingleHtml) {
+      if (game.isWasm4) {
+        const badge = document.createElement('span');
+        badge.className = 'badge-wasm4';
+        badge.textContent = 'WASM-4 Cart';
+        titleEl.appendChild(badge);
+      } else if (game.isSingleHtml) {
         const badge = document.createElement('span');
         badge.className = 'badge-single-html';
         badge.textContent = 'Single HTML';
@@ -868,7 +930,23 @@ async function refreshGameLibrary() {
         const game = await loadGameById(id);
         if (game) {
           try {
-            if (game.isSingleHtml) {
+            if (game.isWasm4) {
+              updateProgressModal('Preparing WASM-4 Cartridge...', 50);
+              const wasmBytes = new Uint8Array(game.zipData);
+              const htmlBytes = new TextEncoder().encode(generateWasm4Html());
+              const normalizedMap: Record<string, Uint8Array> = {
+                'cart.wasm': wasmBytes,
+                'index.html': htmlBytes
+              };
+
+              currentFileMap = normalizedMap;
+              currentEntryPath = 'index.html';
+              activeGameName = game.name;
+
+              updateProgressModal('Populating virtual cache...', 80);
+              await loadGame(normalizedMap, 'index.html');
+              hideProgressModal();
+            } else if (game.isSingleHtml) {
               updateProgressModal('Preparing single HTML game...', 50);
               const uint8Array = new Uint8Array(game.zipData);
               const normalizedMap: Record<string, Uint8Array> = { 'index.html': uint8Array };
@@ -931,6 +1009,17 @@ async function refreshGameLibrary() {
 
 function handleFileSelect(file: File) {
   const name = file.name.toLowerCase();
+  if (isWasm4File(name) || name.endsWith('.wasm')) {
+    statusEl.textContent = `Reading ${file.name}...`;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      if (e.target?.result) {
+        processWasmBuffer(e.target.result as ArrayBuffer, file.name);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+    return;
+  }
   if (name.endsWith('.html') || name.endsWith('.htm')) {
     statusEl.textContent = `Reading ${file.name}...`;
     const reader = new FileReader();
@@ -955,8 +1044,8 @@ function handleFileSelect(file: File) {
     return;
   }
 
-  statusEl.textContent = 'Please select a valid .zip or .html file.';
-  showToast('Please select a valid .zip or .html file.');
+  statusEl.textContent = 'Please select a valid .zip, .html, or .wasm file.';
+  showToast('Please select a valid .zip, .html, or .wasm file.');
 }
 
 // Drag & Drop
@@ -1305,18 +1394,7 @@ interface KeyMapping {
   keyCode: number;
 }
 
-const BUTTON_KEY_MAPPINGS: Record<string, KeyMapping[]> = {
-  ArrowUp: [{ key: 'ArrowUp', code: 'ArrowUp', keyCode: 38 }, { key: 'w', code: 'KeyW', keyCode: 87 }],
-  ArrowDown: [{ key: 'ArrowDown', code: 'ArrowDown', keyCode: 40 }, { key: 's', code: 'KeyS', keyCode: 83 }],
-  ArrowLeft: [{ key: 'ArrowLeft', code: 'ArrowLeft', keyCode: 37 }, { key: 'a', code: 'KeyA', keyCode: 65 }],
-  ArrowRight: [{ key: 'ArrowRight', code: 'ArrowRight', keyCode: 39 }, { key: 'd', code: 'KeyD', keyCode: 68 }],
-  A: [{ key: ' ', code: 'Space', keyCode: 32 }],
-  B: [{ key: 'z', code: 'KeyZ', keyCode: 90 }, { key: 'Escape', code: 'Escape', keyCode: 27 }],
-  X: [{ key: 'x', code: 'KeyX', keyCode: 88 }],
-  Y: [{ key: 'c', code: 'KeyC', keyCode: 67 }, { key: 'Enter', code: 'Enter', keyCode: 13 }],
-  SELECT: [{ key: 'Tab', code: 'Tab', keyCode: 9 }, { key: 'Shift', code: 'ShiftLeft', keyCode: 16 }],
-  START: [{ key: 'Enter', code: 'Enter', keyCode: 13 }, { key: 'p', code: 'KeyP', keyCode: 80 }]
-};
+
 
 function dispatchKeyEvent(type: 'keydown' | 'keyup', mapping: KeyMapping) {
   try {
@@ -1352,8 +1430,9 @@ function dispatchKeyEvent(type: 'keydown' | 'keyup', mapping: KeyMapping) {
 }
 
 function handleButtonPress(btnKey: string, type: 'keydown' | 'keyup') {
-  const mappings = BUTTON_KEY_MAPPINGS[btnKey];
-  if (mappings) {
+  const bindings = getKeybindings();
+  const mappings = bindings[btnKey as InputAction];
+  if (mappings && Array.isArray(mappings)) {
     mappings.forEach((m) => dispatchKeyEvent(type, m));
   }
 }
@@ -1421,6 +1500,14 @@ setupErudaDevTools();
 setupHudControls();
 setupSaveManager();
 setupVirtualGamepad();
+setupControlsModal({ showToast });
+
+new VirtualKeyboardManager({
+  getIframeWindow: () => ({
+    window: gameFrame.contentWindow,
+    document: gameFrame.contentDocument
+  })
+});
 setupMessageIsolation();
 refreshGameLibrary();
 

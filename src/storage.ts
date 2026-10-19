@@ -6,6 +6,7 @@ export interface SavedGame {
   size: number;
   coverUrl?: string;
   isSingleHtml?: boolean;
+  isWasm4?: boolean;
 }
 
 const DB_NAME = 'runaweb_db';
