@@ -1,7 +1,7 @@
 /**
- * PPSSPP-Style Touch Controller Layout Editor Module for RunaWeb.
- * Provides free drag-and-drop repositioning, scale, opacity, glyph-only mode,
- * visibility toggles, and persistent localStorage saving under 'runaweb_app_touch_layout'.
+ * PPSSPP-Style In-Place Touch Controller Layout Editor Module for RunaWeb.
+ * Provides free direct drag-and-drop repositioning across the active game screen,
+ * scale slider, opacity slider, glyph-only mode toggle, and persistent localStorage saving.
  */
 
 export const TOUCH_LAYOUT_STORAGE_KEY = 'runaweb_app_touch_layout';
@@ -126,7 +126,6 @@ export function applyTouchLayoutToDOM(gamepadContainer: HTMLElement, layout?: To
   const cfg = layout || getTouchLayout();
   const elementMap = getControlElementMap(gamepadContainer);
 
-  // Apply custom layout styling to individual controls
   (Object.keys(cfg) as TouchControlKey[]).forEach((key) => {
     const el = elementMap[key];
     const itemCfg = cfg[key];
@@ -150,183 +149,157 @@ export function applyTouchLayoutToDOM(gamepadContainer: HTMLElement, layout?: To
 export interface TouchEditorOptions {
   showToast?: (message: string) => void;
   onLayoutSaved?: () => void;
+  getGamepadContainer?: () => HTMLElement | null;
 }
 
 export function setupTouchEditorModal(options: TouchEditorOptions = {}) {
-  let modal = document.getElementById('touch-editor-modal') as HTMLDivElement;
+  let toolbar = document.getElementById('touch-editor-toolbar') as HTMLDivElement;
 
-  if (!modal) {
-    modal = document.createElement('div');
-    modal.id = 'touch-editor-modal';
-    modal.className = 'modal-backdrop hidden';
-    modal.innerHTML = `
-      <div class="touch-editor-card">
-        <div class="touch-editor-header">
-          <div class="touch-editor-title">
-            <span>✏️</span> Touch Controller Layout Editor
-          </div>
-          <button id="close-touch-editor" class="btn-modal-close" title="Close">✕</button>
-        </div>
-
-        <div class="touch-editor-toolbar">
-          <div class="toolbar-group">
-            <span id="selected-control-label" class="toolbar-label">Select a button below</span>
-          </div>
-
-          <div class="toolbar-group">
-            <label class="slider-label">Scale: <span id="scale-value">1.0x</span></label>
-            <input type="range" id="scale-slider" min="0.6" max="1.8" step="0.05" value="1.0" class="editor-slider" />
-          </div>
-
-          <div class="toolbar-group">
-            <label class="slider-label">Opacity: <span id="opacity-value">100%</span></label>
-            <input type="range" id="opacity-slider" min="10" max="100" step="5" value="100" class="editor-slider" />
-          </div>
-
-          <div class="toolbar-group toolbar-toggles">
-            <label class="toggle-btn-label">
-              <input type="checkbox" id="glyph-toggle" />
-              <span>Glyph Only</span>
-            </label>
-            <label class="toggle-btn-label">
-              <input type="checkbox" id="visible-toggle" checked />
-              <span>Visible</span>
-            </label>
-          </div>
-
-          <div class="toolbar-actions">
-            <button id="reset-touch-layout-btn" class="btn btn-secondary">🔄 Reset</button>
-            <button id="save-touch-layout-btn" class="btn btn-primary">💾 Save Layout</button>
-          </div>
-        </div>
-
-        <div id="touch-editor-canvas" class="touch-editor-canvas"></div>
+  if (!toolbar) {
+    toolbar = document.createElement('div');
+    toolbar.id = 'touch-editor-toolbar';
+    toolbar.className = 'hidden';
+    toolbar.innerHTML = `
+      <div class="toolbar-group">
+        <span id="editor-selected-label" class="toolbar-label">Selected: D-Pad</span>
+      </div>
+      <div class="toolbar-group">
+        <label class="slider-label">Scale: <span id="editor-scale-val">1.00x</span></label>
+        <input type="range" id="editor-scale-slider" min="0.6" max="1.8" step="0.05" value="1.0" class="editor-slider" />
+      </div>
+      <div class="toolbar-group">
+        <label class="slider-label">Opacity: <span id="editor-opacity-val">100%</span></label>
+        <input type="range" id="editor-opacity-slider" min="10" max="100" step="5" value="100" class="editor-slider" />
+      </div>
+      <div class="toolbar-group toolbar-toggles">
+        <label class="toggle-btn-label">
+          <input type="checkbox" id="editor-glyph-toggle" />
+          <span>Glyph Only</span>
+        </label>
+      </div>
+      <div class="toolbar-actions">
+        <button id="editor-reset-btn" class="btn btn-secondary">🔄 Reset</button>
+        <button id="editor-save-btn" class="btn btn-primary">💾 Save Layout</button>
       </div>
     `;
-    document.body.appendChild(modal);
+    document.body.appendChild(toolbar);
   }
 
-  const canvas = modal.querySelector('#touch-editor-canvas') as HTMLDivElement;
-  const selectedLabel = modal.querySelector('#selected-control-label') as HTMLSpanElement;
-  const scaleSlider = modal.querySelector('#scale-slider') as HTMLInputElement;
-  const scaleValue = modal.querySelector('#scale-value') as HTMLSpanElement;
-  const opacitySlider = modal.querySelector('#opacity-slider') as HTMLInputElement;
-  const opacityValue = modal.querySelector('#opacity-value') as HTMLSpanElement;
-  const glyphToggle = modal.querySelector('#glyph-toggle') as HTMLInputElement;
-  const visibleToggle = modal.querySelector('#visible-toggle') as HTMLInputElement;
-  const closeBtn = modal.querySelector('#close-touch-editor') as HTMLButtonElement;
-  const resetBtn = modal.querySelector('#reset-touch-layout-btn') as HTMLButtonElement;
-  const saveBtn = modal.querySelector('#save-touch-layout-btn') as HTMLButtonElement;
+  const selectedLabel = toolbar.querySelector('#editor-selected-label') as HTMLSpanElement;
+  const scaleSlider = toolbar.querySelector('#editor-scale-slider') as HTMLInputElement;
+  const scaleVal = toolbar.querySelector('#editor-scale-val') as HTMLSpanElement;
+  const opacitySlider = toolbar.querySelector('#editor-opacity-slider') as HTMLInputElement;
+  const opacityVal = toolbar.querySelector('#editor-opacity-val') as HTMLSpanElement;
+  const glyphToggle = toolbar.querySelector('#editor-glyph-toggle') as HTMLInputElement;
+  const resetBtn = toolbar.querySelector('#editor-reset-btn') as HTMLButtonElement;
+  const saveBtn = toolbar.querySelector('#editor-save-btn') as HTMLButtonElement;
 
+  let isEditingMode = false;
   let currentLayout: TouchLayoutConfig = getTouchLayout();
   let selectedKey: TouchControlKey = 'dpad';
   let activeDragKey: TouchControlKey | null = null;
   let dragOffset = { x: 0, y: 0 };
 
-  function renderCanvas() {
-    if (!canvas) return;
-    canvas.innerHTML = '';
-
-    (Object.keys(currentLayout) as TouchControlKey[]).forEach((key) => {
-      const cfg = currentLayout[key];
-      const target = document.createElement('div');
-      target.className = `editor-target editor-target-${key}`;
-      if (selectedKey === key) target.classList.add('selected');
-      if (cfg.glyphOnly) target.classList.add('glyph-only');
-      if (!cfg.visible) target.classList.add('hidden-target');
-
-      target.style.left = `${cfg.x}%`;
-      target.style.top = `${cfg.y}%`;
-      target.style.transform = `scale(${cfg.scale})`;
-      target.style.opacity = `${cfg.opacity}`;
-
-      let innerHTML = '';
-      if (key === 'dpad') {
-        innerHTML = `<div class="editor-dpad"><span>▲</span><div><span>◀</span><span>▶</span></div><span>▼</span></div>`;
-      } else if (key === 'select') {
-        innerHTML = `<span class="editor-btn-text">SELECT</span>`;
-      } else if (key === 'start') {
-        innerHTML = `<span class="editor-btn-text">START</span>`;
-      } else {
-        const letter = key.replace('action', '');
-        innerHTML = `<span class="editor-btn-text">${letter}</span>`;
-      }
-
-      target.innerHTML = innerHTML;
-
-      target.addEventListener('mousedown', (e) => startDrag(e, key));
-      target.addEventListener('touchstart', (e) => startDrag(e, key), { passive: false });
-
-      canvas.appendChild(target);
-    });
-
-    updateToolbarForSelected();
+  function getGamepadEl(): HTMLElement | null {
+    if (options.getGamepadContainer) return options.getGamepadContainer();
+    return document.getElementById('virtual-gamepad');
   }
 
-  function selectControl(key: TouchControlKey) {
-    selectedKey = key;
-    renderCanvas();
-  }
-
-  function updateToolbarForSelected() {
+  function updateToolbarUI() {
     const cfg = currentLayout[selectedKey];
     if (!cfg) return;
 
     if (selectedLabel) selectedLabel.textContent = `Selected: ${CONTROL_LABELS[selectedKey]}`;
     if (scaleSlider) scaleSlider.value = cfg.scale.toString();
-    if (scaleValue) scaleValue.textContent = `${cfg.scale.toFixed(2)}x`;
+    if (scaleVal) scaleVal.textContent = `${cfg.scale.toFixed(2)}x`;
     if (opacitySlider) opacitySlider.value = Math.round(cfg.opacity * 100).toString();
-    if (opacityValue) opacityValue.textContent = `${Math.round(cfg.opacity * 100)}%`;
+    if (opacityVal) opacityVal.textContent = `${Math.round(cfg.opacity * 100)}%`;
     if (glyphToggle) glyphToggle.checked = cfg.glyphOnly;
-    if (visibleToggle) visibleToggle.checked = cfg.visible;
   }
 
-  function startDrag(e: MouseEvent | TouchEvent, key: TouchControlKey) {
-    e.preventDefault();
-    selectControl(key);
-    activeDragKey = key;
+  function updateSelectedHighlight() {
+    const gamepad = getGamepadEl();
+    if (!gamepad) return;
+    const elementMap = getControlElementMap(gamepad);
 
-    const rect = canvas.getBoundingClientRect();
-    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
-    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+    (Object.keys(CONTROL_LABELS) as TouchControlKey[]).forEach((key) => {
+      const el = elementMap[key];
+      if (el) {
+        if (isEditingMode && key === selectedKey) {
+          el.classList.add('touch-editing-selected');
+        } else {
+          el.classList.remove('touch-editing-selected');
+        }
+      }
+    });
+  }
 
-    const currentX = (currentLayout[key].x / 100) * rect.width;
-    const currentY = (currentLayout[key].y / 100) * rect.height;
+  function selectControl(key: TouchControlKey) {
+    selectedKey = key;
+    updateToolbarUI();
+    updateSelectedHighlight();
+  }
 
-    dragOffset.x = clientX - rect.left - currentX;
-    dragOffset.y = clientY - rect.top - currentY;
+  function attachDragListeners() {
+    const gamepad = getGamepadEl();
+    if (!gamepad) return;
+    const elementMap = getControlElementMap(gamepad);
 
-    window.addEventListener('mousemove', onDragMove);
-    window.addEventListener('touchmove', onDragMove, { passive: false });
-    window.addEventListener('mouseup', onDragEnd);
-    window.addEventListener('touchend', onDragEnd);
+    (Object.keys(elementMap) as TouchControlKey[]).forEach((key) => {
+      const el = elementMap[key];
+      if (!el) return;
+
+      const handlePointerDown = (e: MouseEvent | TouchEvent) => {
+        if (!isEditingMode) return;
+        e.preventDefault();
+        e.stopPropagation();
+
+        selectControl(key);
+        activeDragKey = key;
+
+        const rect = gamepad.getBoundingClientRect();
+        const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+        const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+
+        const currentX = (currentLayout[key].x / 100) * rect.width;
+        const currentY = (currentLayout[key].y / 100) * rect.height;
+
+        dragOffset.x = clientX - rect.left - currentX;
+        dragOffset.y = clientY - rect.top - currentY;
+
+        window.addEventListener('mousemove', onDragMove);
+        window.addEventListener('touchmove', onDragMove, { passive: false });
+        window.addEventListener('mouseup', onDragEnd);
+        window.addEventListener('touchend', onDragEnd);
+      };
+
+      el.addEventListener('mousedown', handlePointerDown);
+      el.addEventListener('touchstart', handlePointerDown, { passive: false });
+    });
   }
 
   function onDragMove(e: MouseEvent | TouchEvent) {
-    if (!activeDragKey || !canvas) return;
+    if (!isEditingMode || !activeDragKey) return;
     if ('touches' in e) e.preventDefault();
 
-    const rect = canvas.getBoundingClientRect();
+    const gamepad = getGamepadEl();
+    if (!gamepad) return;
+
+    const rect = gamepad.getBoundingClientRect();
     const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
     const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
 
     let posX = clientX - rect.left - dragOffset.x;
     let posY = clientY - rect.top - dragOffset.y;
 
-    let pctX = (posX / rect.width) * 100;
-    let pctY = (posY / rect.height) * 100;
-
-    pctX = Math.max(0, Math.min(90, pctX));
-    pctY = Math.max(0, Math.min(90, pctY));
+    let pctX = Math.max(0, Math.min(90, (posX / rect.width) * 100));
+    let pctY = Math.max(0, Math.min(90, (posY / rect.height) * 100));
 
     currentLayout[activeDragKey].x = Math.round(pctX);
     currentLayout[activeDragKey].y = Math.round(pctY);
 
-    const targetEl = canvas.querySelector(`.editor-target-${activeDragKey}`) as HTMLElement;
-    if (targetEl) {
-      targetEl.style.left = `${currentLayout[activeDragKey].x}%`;
-      targetEl.style.top = `${currentLayout[activeDragKey].y}%`;
-    }
+    applyTouchLayoutToDOM(gamepad, currentLayout);
+    updateSelectedHighlight();
   }
 
   function onDragEnd() {
@@ -341,8 +314,9 @@ export function setupTouchEditorModal(options: TouchEditorOptions = {}) {
     scaleSlider.addEventListener('input', () => {
       const val = parseFloat(scaleSlider.value);
       currentLayout[selectedKey].scale = val;
-      if (scaleValue) scaleValue.textContent = `${val.toFixed(2)}x`;
-      renderCanvas();
+      if (scaleVal) scaleVal.textContent = `${val.toFixed(2)}x`;
+      const gamepad = getGamepadEl();
+      if (gamepad) applyTouchLayoutToDOM(gamepad, currentLayout);
     });
   }
 
@@ -350,29 +324,27 @@ export function setupTouchEditorModal(options: TouchEditorOptions = {}) {
     opacitySlider.addEventListener('input', () => {
       const val = parseInt(opacitySlider.value, 10);
       currentLayout[selectedKey].opacity = val / 100;
-      if (opacityValue) opacityValue.textContent = `${val}%`;
-      renderCanvas();
+      if (opacityVal) opacityVal.textContent = `${val}%`;
+      const gamepad = getGamepadEl();
+      if (gamepad) applyTouchLayoutToDOM(gamepad, currentLayout);
     });
   }
 
   if (glyphToggle) {
     glyphToggle.addEventListener('change', () => {
       currentLayout[selectedKey].glyphOnly = glyphToggle.checked;
-      renderCanvas();
-    });
-  }
-
-  if (visibleToggle) {
-    visibleToggle.addEventListener('change', () => {
-      currentLayout[selectedKey].visible = visibleToggle.checked;
-      renderCanvas();
+      const gamepad = getGamepadEl();
+      if (gamepad) applyTouchLayoutToDOM(gamepad, currentLayout);
     });
   }
 
   if (resetBtn) {
     resetBtn.addEventListener('click', () => {
-      currentLayout = getDefaultTouchLayout();
-      renderCanvas();
+      currentLayout = resetTouchLayout();
+      const gamepad = getGamepadEl();
+      if (gamepad) applyTouchLayoutToDOM(gamepad, currentLayout);
+      updateToolbarUI();
+      updateSelectedHighlight();
       if (options.showToast) options.showToast('Touch layout reset to defaults.');
     });
   }
@@ -380,36 +352,44 @@ export function setupTouchEditorModal(options: TouchEditorOptions = {}) {
   if (saveBtn) {
     saveBtn.addEventListener('click', () => {
       saveTouchLayout(currentLayout);
-      const virtualGamepad = document.getElementById('virtual-gamepad');
-      if (virtualGamepad) {
-        applyTouchLayoutToDOM(virtualGamepad, currentLayout);
-      }
-      modal.classList.add('hidden');
+      const gamepad = getGamepadEl();
+      if (gamepad) applyTouchLayoutToDOM(gamepad, currentLayout);
+
+      close();
+
       if (options.showToast) options.showToast('Saved touch layout changes.');
       if (options.onLayoutSaved) options.onLayoutSaved();
     });
   }
 
-  if (closeBtn) {
-    closeBtn.addEventListener('click', () => {
-      modal.classList.add('hidden');
-    });
+  function open() {
+    isEditingMode = true;
+    currentLayout = getTouchLayout();
+    const gamepad = getGamepadEl();
+    if (gamepad) {
+      gamepad.classList.remove('hidden');
+      gamepad.classList.add('editing');
+      applyTouchLayoutToDOM(gamepad, currentLayout);
+    }
+    toolbar.classList.remove('hidden');
+    attachDragListeners();
+    selectControl('dpad');
   }
 
-  modal.addEventListener('click', (e) => {
-    if (e.target === modal) {
-      modal.classList.add('hidden');
+  function close() {
+    isEditingMode = false;
+    toolbar.classList.add('hidden');
+    const gamepad = getGamepadEl();
+    if (gamepad) {
+      gamepad.classList.remove('editing');
+      updateSelectedHighlight();
+      applyTouchLayoutToDOM(gamepad, getTouchLayout());
     }
-  });
+  }
 
   return {
-    open() {
-      currentLayout = getTouchLayout();
-      modal.classList.remove('hidden');
-      renderCanvas();
-    },
-    close() {
-      modal.classList.add('hidden');
-    }
+    open,
+    close,
+    isEditing: () => isEditingMode
   };
 }

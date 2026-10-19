@@ -295,7 +295,6 @@
         box-shadow: 0 0 12px rgba(0, 242, 254, 0.6);
       }
 
-
       /* Key Mapping & Virtual Keyboard Styles */
       .controls-grid {
         display: grid;
@@ -882,7 +881,6 @@
         margin-bottom: 0.5rem;
       }
 
-
       .badge-wasm4 {
         display: inline-block;
         background: rgba(134, 192, 108, 0.25);
@@ -1089,40 +1087,29 @@
         to { opacity: 1; transform: translateY(0) scale(1); }
       }
 
-      /* Virtual Gamepad Styles */
+      /* Virtual Gamepad Overlay Styles */
       #virtual-gamepad {
         position: absolute;
-        bottom: 20px;
-        left: 50%;
-        transform: translateX(-50%);
-        width: calc(100% - 40px);
-        max-width: 600px;
+        inset: 0;
+        width: 100%;
+        height: 100%;
         pointer-events: none;
-        display: flex;
-        justify-content: space-between;
-        align-items: flex-end;
         z-index: 100;
-        padding: 16px 24px;
-
-        background: rgba(10, 12, 18, 0.65);
-        backdrop-filter: blur(16px);
-        -webkit-backdrop-filter: blur(16px);
-        border: 1px solid rgba(0, 242, 254, 0.2);
-        border-radius: 28px;
-        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6), inset 0 0 15px rgba(0, 242, 254, 0.08);
-        transition: opacity 0.3s ease, visibility 0.3s ease, transform 0.3s ease;
+        transition: opacity 0.3s ease, visibility 0.3s ease;
       }
 
       #virtual-gamepad.hidden {
         opacity: 0;
         visibility: hidden;
         pointer-events: none;
-        transform: translate(-50%, 20px);
+      }
+
+      #virtual-gamepad button, #virtual-gamepad .dpad-container {
+        pointer-events: auto;
+        touch-action: none;
       }
 
       #virtual-gamepad button {
-        pointer-events: auto;
-        touch-action: manipulation;
         font-family: inherit;
         font-weight: 700;
         color: var(--neon-cyan);
@@ -1150,49 +1137,40 @@
         box-shadow: none !important;
       }
 
-      /* Touch Layout Editor Modal & Canvas */
-      .touch-editor-card {
-        background: rgba(18, 20, 29, 0.95);
-        border: 1px solid var(--glass-border-hover);
-        border-radius: 24px;
-        width: 95%;
-        max-width: 800px;
-        height: 90vh;
-        max-height: 600px;
-        padding: 1.5rem;
-        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.9), 0 0 30px rgba(0, 242, 254, 0.2);
-        display: flex;
-        flex-direction: column;
-        gap: 1rem;
-        z-index: 700;
+      /* In-Place Touch Editor Selection Glow */
+      .touch-editing-selected {
+        outline: 2px dashed var(--neon-cyan) !important;
+        outline-offset: 4px;
+        box-shadow: 0 0 18px var(--neon-cyan) !important;
+        z-index: 110 !important;
       }
 
-      .touch-editor-header {
+      /* Slim Floating Glass Toolbar */
+      #touch-editor-toolbar {
+        position: fixed;
+        top: 14px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 600;
+        background: rgba(18, 20, 29, 0.92);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        border: 1px solid var(--neon-cyan);
+        border-radius: 50px;
+        padding: 8px 20px;
         display: flex;
-        justify-content: space-between;
         align-items: center;
-        border-bottom: 1px solid var(--glass-border);
-        padding-bottom: 0.75rem;
-      }
-
-      .touch-editor-title {
-        font-size: 1.2rem;
-        font-weight: 700;
+        gap: 12px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7), 0 0 20px rgba(0, 242, 254, 0.3);
         color: var(--text-primary);
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
+        font-size: 0.85rem;
+        max-width: 95vw;
+        flex-wrap: wrap;
+        justify-content: center;
       }
 
-      .touch-editor-toolbar {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.75rem 1.25rem;
-        align-items: center;
-        background: rgba(255, 255, 255, 0.04);
-        padding: 0.75rem 1rem;
-        border-radius: 14px;
-        border: 1px solid var(--glass-border);
+      #touch-editor-toolbar.hidden {
+        display: none !important;
       }
 
       .toolbar-group {
@@ -1213,7 +1191,7 @@
       }
 
       .editor-slider {
-        width: 100px;
+        width: 90px;
         accent-color: var(--neon-cyan);
       }
 
@@ -1234,77 +1212,11 @@
       .toolbar-actions {
         display: flex;
         gap: 0.5rem;
-        margin-left: auto;
-      }
-
-      .touch-editor-canvas {
-        flex: 1;
-        position: relative;
-        background: rgba(8, 9, 13, 0.8);
-        border: 1.5px dashed var(--neon-cyan);
-        border-radius: 18px;
-        overflow: hidden;
-        user-select: none;
-        touch-action: none;
-      }
-
-      .editor-target {
-        position: absolute;
-        cursor: move;
-        user-select: none;
-        touch-action: none;
-        border: 2px dashed rgba(0, 242, 254, 0.5);
-        border-radius: 12px;
-        padding: 8px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        background: rgba(0, 242, 254, 0.1);
-        color: var(--neon-cyan);
-        transition: border-color 0.15s, box-shadow 0.15s;
-      }
-
-      .editor-target.selected {
-        border: 2px solid var(--neon-cyan) !important;
-        box-shadow: 0 0 15px var(--neon-cyan);
-        z-index: 10;
-      }
-
-      .editor-target.hidden-target {
-        opacity: 0.25 !important;
-      }
-
-      .editor-target-dpad {
-        width: 100px;
-        height: 100px;
-      }
-
-      .editor-dpad {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        font-size: 0.8rem;
-        font-weight: 700;
-      }
-
-      .editor-target-select, .editor-target-start {
-        width: 60px;
-        height: 30px;
-        font-size: 0.65rem;
-        font-weight: 700;
-      }
-
-      .editor-target-actionY, .editor-target-actionX, .editor-target-actionB, .editor-target-actionA {
-        width: 44px;
-        height: 44px;
-        border-radius: 50%;
-        font-weight: 800;
-        font-size: 1rem;
       }
 
       /* D-Pad Section */
       .dpad-container {
-        position: relative;
+        position: absolute;
         width: 130px;
         height: 130px;
       }
@@ -1323,14 +1235,8 @@
       .dpad-btn[data-key="ArrowRight"] { top: 44px; right: 0; }
 
       /* Center Option Buttons */
-      .center-container {
-        display: flex;
-        gap: 10px;
-        align-self: flex-end;
-        margin-bottom: 6px;
-      }
-
       .center-btn {
+        position: absolute;
         width: 58px !important;
         height: 26px !important;
         border-radius: 13px !important;
@@ -1348,12 +1254,6 @@
       }
 
       /* Action Buttons Section (X/Y/A/B) */
-      .actions-container {
-        position: relative;
-        width: 130px;
-        height: 130px;
-      }
-
       .action-btn {
         position: absolute;
         width: 42px;
@@ -1362,8 +1262,6 @@
       }
 
       .action-btn[data-button="Y"] {
-        top: 0;
-        left: 44px;
         border-color: #ffbd59 !important;
         color: #ffbd59 !important;
       }
@@ -1375,15 +1273,11 @@
       }
 
       .action-btn[data-button="X"] {
-        top: 44px;
-        left: 0;
         border-color: var(--neon-cyan) !important;
         color: var(--neon-cyan) !important;
       }
 
       .action-btn[data-button="B"] {
-        top: 44px;
-        right: 0;
         border-color: var(--neon-magenta) !important;
         color: var(--neon-magenta) !important;
       }
@@ -1395,8 +1289,6 @@
       }
 
       .action-btn[data-button="A"] {
-        bottom: 0;
-        left: 44px;
         border-color: var(--neon-green) !important;
         color: var(--neon-green) !important;
       }
@@ -1421,12 +1313,7 @@
           font-size: 1.15rem;
         }
 
-        #virtual-gamepad {
-          width: calc(100% - 20px);
-          padding: 12px;
-        }
-
-        .dpad-container, .actions-container {
+        .dpad-container {
           width: 110px;
           height: 110px;
         }
@@ -1436,10 +1323,10 @@
           height: 36px;
         }
 
-        .dpad-btn[data-key="ArrowUp"], .action-btn[data-button="Y"] { left: 37px; }
-        .dpad-btn[data-key="ArrowDown"], .action-btn[data-button="A"] { left: 37px; }
-        .dpad-btn[data-key="ArrowLeft"], .action-btn[data-button="X"] { top: 37px; }
-        .dpad-btn[data-key="ArrowRight"], .action-btn[data-button="B"] { top: 37px; }
+        .dpad-btn[data-key="ArrowUp"] { left: 37px; }
+        .dpad-btn[data-key="ArrowDown"] { left: 37px; }
+        .dpad-btn[data-key="ArrowLeft"] { top: 37px; }
+        .dpad-btn[data-key="ArrowRight"] { top: 37px; }
 
         .center-btn {
           width: 48px !important;
@@ -1638,17 +1525,13 @@
             <button class="dpad-btn" data-key="ArrowDown">▼</button>
           </div>
 
-          <div class="center-container">
-            <button class="center-btn" data-button="SELECT">SELECT</button>
-            <button class="center-btn" data-button="START">START</button>
-          </div>
+          <button class="center-btn" data-button="SELECT">SELECT</button>
+          <button class="center-btn" data-button="START">START</button>
 
-          <div class="actions-container">
-            <button class="action-btn" data-button="Y">Y</button>
-            <button class="action-btn" data-button="X">X</button>
-            <button class="action-btn" data-button="B">B</button>
-            <button class="action-btn" data-button="A">A</button>
-          </div>
+          <button class="action-btn" data-button="Y">Y</button>
+          <button class="action-btn" data-button="X">X</button>
+          <button class="action-btn" data-button="B">B</button>
+          <button class="action-btn" data-button="A">A</button>
         </div>
       </div>
     </main>

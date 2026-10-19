@@ -124,7 +124,17 @@ export function generateWasm4Html(): string {
       }
 
       ['pointerdown', 'touchstart', 'click', 'keydown'].forEach(evt => {
-        window.addEventListener(evt, initAudio, { passive: true, once: false });
+        window.addEventListener(evt, initAudio, { passive: true, capture: true });
+        document.addEventListener(evt, initAudio, { passive: true, capture: true });
+      });
+
+      window.addEventListener('message', (e) => {
+        if (e.data && e.data.type === 'RUNAWEB_AUDIO_UNLOCK') {
+          initAudio();
+          if (audioCtx && audioCtx.state === 'suspended') {
+            audioCtx.resume().catch(() => {});
+          }
+        }
       });
 
       const pulseWaveCache = {};
