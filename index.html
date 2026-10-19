@@ -1143,6 +1143,165 @@
         transform: scale(0.92);
       }
 
+      /* Glyph Only Mode */
+      .glyph-only {
+        background: transparent !important;
+        border-color: transparent !important;
+        box-shadow: none !important;
+      }
+
+      /* Touch Layout Editor Modal & Canvas */
+      .touch-editor-card {
+        background: rgba(18, 20, 29, 0.95);
+        border: 1px solid var(--glass-border-hover);
+        border-radius: 24px;
+        width: 95%;
+        max-width: 800px;
+        height: 90vh;
+        max-height: 600px;
+        padding: 1.5rem;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.9), 0 0 30px rgba(0, 242, 254, 0.2);
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+        z-index: 700;
+      }
+
+      .touch-editor-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 1px solid var(--glass-border);
+        padding-bottom: 0.75rem;
+      }
+
+      .touch-editor-title {
+        font-size: 1.2rem;
+        font-weight: 700;
+        color: var(--text-primary);
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+
+      .touch-editor-toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem 1.25rem;
+        align-items: center;
+        background: rgba(255, 255, 255, 0.04);
+        padding: 0.75rem 1rem;
+        border-radius: 14px;
+        border: 1px solid var(--glass-border);
+      }
+
+      .toolbar-group {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+
+      .toolbar-label {
+        font-size: 0.85rem;
+        font-weight: 700;
+        color: var(--neon-cyan);
+      }
+
+      .slider-label {
+        font-size: 0.8rem;
+        color: var(--text-muted);
+      }
+
+      .editor-slider {
+        width: 100px;
+        accent-color: var(--neon-cyan);
+      }
+
+      .toolbar-toggles {
+        display: flex;
+        gap: 0.75rem;
+      }
+
+      .toggle-btn-label {
+        font-size: 0.8rem;
+        color: var(--text-primary);
+        display: flex;
+        align-items: center;
+        gap: 0.35rem;
+        cursor: pointer;
+      }
+
+      .toolbar-actions {
+        display: flex;
+        gap: 0.5rem;
+        margin-left: auto;
+      }
+
+      .touch-editor-canvas {
+        flex: 1;
+        position: relative;
+        background: rgba(8, 9, 13, 0.8);
+        border: 1.5px dashed var(--neon-cyan);
+        border-radius: 18px;
+        overflow: hidden;
+        user-select: none;
+        touch-action: none;
+      }
+
+      .editor-target {
+        position: absolute;
+        cursor: move;
+        user-select: none;
+        touch-action: none;
+        border: 2px dashed rgba(0, 242, 254, 0.5);
+        border-radius: 12px;
+        padding: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(0, 242, 254, 0.1);
+        color: var(--neon-cyan);
+        transition: border-color 0.15s, box-shadow 0.15s;
+      }
+
+      .editor-target.selected {
+        border: 2px solid var(--neon-cyan) !important;
+        box-shadow: 0 0 15px var(--neon-cyan);
+        z-index: 10;
+      }
+
+      .editor-target.hidden-target {
+        opacity: 0.25 !important;
+      }
+
+      .editor-target-dpad {
+        width: 100px;
+        height: 100px;
+      }
+
+      .editor-dpad {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        font-size: 0.8rem;
+        font-weight: 700;
+      }
+
+      .editor-target-select, .editor-target-start {
+        width: 60px;
+        height: 30px;
+        font-size: 0.65rem;
+        font-weight: 700;
+      }
+
+      .editor-target-actionY, .editor-target-actionX, .editor-target-actionB, .editor-target-actionA {
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        font-weight: 800;
+        font-size: 1rem;
+      }
+
       /* D-Pad Section */
       .dpad-container {
         position: relative;
@@ -1508,7 +1667,10 @@
             Click any input action button to rebind its physical keyboard key persistently.
           </p>
           <div id="controls-grid" class="controls-grid"></div>
-          <div style="margin-top: 1rem; display: flex; justify-content: flex-end;">
+          <div style="margin-top: 1rem; display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+            <button id="open-touch-editor-btn" class="btn" style="padding: 0.5rem 1rem;">
+              <span>✏️ Customize Touch Layout</span>
+            </button>
             <button id="reset-controls-btn" class="btn-save-action" style="flex: none; padding: 0.5rem 1rem;">
               <span>🔄 Reset to Defaults</span>
             </button>

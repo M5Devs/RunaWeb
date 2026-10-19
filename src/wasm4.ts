@@ -1,7 +1,7 @@
 /**
  * WASM-4 Fantasy Console Micro-Runtime Generator for RunaWeb.
  * Provides full WASM-4 cartridge loading, memory mapping, drawing API,
- * audio/disk stubs, and 60fps retro framebuffer rendering.
+ * Web Audio APU synthesizer for tone(), disk storage, and 60fps retro framebuffer rendering.
  */
 
 export function isWasm4File(filename: string): boolean {
@@ -107,6 +107,74 @@ export function generateWasm4Html(): string {
           updateGamepadByte();
         }
       });
+
+      // Web Audio APU Sound Synthesizer Engine
+      let audioCtx = null;
+
+      function initAudio() {
+        if (!audioCtx) {
+          const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+          if (AudioContextClass) {
+            audioCtx = new AudioContextClass();
+          }
+        }
+        if (audioCtx && audioCtx.state === 'suspended') {
+          audioCtx.resume().catch(() => {});
+        }
+      }
+
+      ['pointerdown', 'touchstart', 'click', 'keydown'].forEach(evt => {
+        window.addEventListener(evt, initAudio, { passive: true, once: false });
+      });
+
+      const pulseWaveCache = {};
+
+      function getPulseWave(duty) {
+        if (!audioCtx) return null;
+        if (pulseWaveCache[duty]) return pulseWaveCache[duty];
+
+        const numHarmonics = 64;
+        const real = new Float32Array(numHarmonics);
+        const imag = new Float32Array(numHarmonics);
+
+        let dutyCycle = 0.5;
+        if (duty === 0) dutyCycle = 0.125;
+        else if (duty === 1) dutyCycle = 0.25;
+        else if (duty === 2) dutyCycle = 0.50;
+        else if (duty === 3) dutyCycle = 0.75;
+
+        for (let n = 1; n < numHarmonics; n++) {
+          imag[n] = (2 / (n * Math.PI)) * Math.sin(n * Math.PI * dutyCycle);
+        }
+
+        const wave = audioCtx.createPeriodicWave(real, imag);
+        pulseWaveCache[duty] = wave;
+        return wave;
+      }
+
+      function createNoiseBuffer(is7Bit) {
+        if (!audioCtx) return null;
+        const sampleRate = audioCtx.sampleRate || 44100;
+        const buffer = audioCtx.createBuffer(1, sampleRate, sampleRate);
+        const data = buffer.getChannelData(0);
+
+        let reg = 0x7f80;
+        for (let i = 0; i < sampleRate; i++) {
+          let feedback = 0;
+          if (is7Bit) {
+            feedback = ((reg & 1) ^ ((reg >> 1) & 1));
+            reg = (reg >> 1) | (feedback << 6);
+          } else {
+            feedback = ((reg & 1) ^ ((reg >> 1) & 1));
+            reg = (reg >> 1) | (feedback << 14);
+          }
+          data[i] = (reg & 1) ? 1.0 : -1.0;
+        }
+        return buffer;
+      }
+
+      let whiteNoiseBuf = null;
+      let buzzyNoiseBuf = null;
 
       // Simple 8x8 font bitmap decoder
       const font = new Uint8Array([
@@ -343,7 +411,121 @@ export function generateWasm4Html(): string {
           },
 
           tone(frequency, duration, volume, flags) {
-            // Web Audio Synth stub for retro WASM-4 tone sound effects
+            initAudio();
+            if (!audioCtx) return;
+
+            const freq1 = frequency & 0xffff;
+            let freq2 = (frequency >> 16) & 0xffff;
+            if (freq2 === 0) freq2 = freq1;
+
+            const sustainFrames = duration & 0xff;
+            const releaseFrames = (duration >> 8) & 0xff;
+            const decayFrames = (duration >> 16) & 0xff;
+            const attackFrames = (duration >> 24) & 0xff;
+
+            const totalFrames = attackFrames + decayFrames + sustainFrames + releaseFrames;
+            if (totalFrames === 0) return;
+
+            let peakVol = volume & 0xff;
+            if (peakVol === 0) peakVol = 100;
+            let sustainVol = (volume >> 8) & 0xff;
+            if (sustainVol === 0 && sustainFrames > 0) sustainVol = peakVol;
+
+            const peakGain = (peakVol / 100) * 0.25;
+            const sustainGain = (sustainVol / 100) * 0.25;
+
+            const channel = flags & 0x03;
+            const duty = (flags >> 2) & 0x03;
+            const pan = (flags >> 4) & 0x03;
+
+            const startTime = audioCtx.currentTime;
+            const attackTime = startTime + (attackFrames / 60);
+            const decayTime = attackTime + (decayFrames / 60);
+            const sustainTime = decayTime + (sustainFrames / 60);
+            const stopTime = sustainTime + (releaseFrames / 60);
+
+            const gainNode = audioCtx.createGain();
+            gainNode.gain.setValueAtTime(0, startTime);
+            if (attackFrames > 0) {
+              gainNode.gain.linearRampToValueAtTime(peakGain, attackTime);
+            } else {
+              gainNode.gain.setValueAtTime(peakGain, startTime);
+            }
+            if (decayFrames > 0) {
+              gainNode.gain.linearRampToValueAtTime(sustainGain, decayTime);
+            } else {
+              gainNode.gain.setValueAtTime(sustainGain, attackTime);
+            }
+            gainNode.gain.setValueAtTime(sustainGain, sustainTime);
+            if (releaseFrames > 0) {
+              gainNode.gain.linearRampToValueAtTime(0, stopTime);
+            } else {
+              gainNode.gain.setValueAtTime(0, sustainTime);
+            }
+
+            let outputNode = gainNode;
+            if (audioCtx.createStereoPanner) {
+              const panner = audioCtx.createStereoPanner();
+              let panVal = 0;
+              if (pan === 1) panVal = -1;
+              else if (pan === 2) panVal = 1;
+              panner.pan.setValueAtTime(panVal, startTime);
+              gainNode.connect(panner);
+              outputNode = panner;
+            }
+            outputNode.connect(audioCtx.destination);
+
+            if (channel === 0 || channel === 1) { // Pulse 1 or Pulse 2
+              const osc = audioCtx.createOscillator();
+              const wave = getPulseWave(duty);
+              if (wave) osc.setPeriodicWave(wave);
+
+              osc.frequency.setValueAtTime(freq1, startTime);
+              if (freq2 !== freq1) {
+                osc.frequency.linearRampToValueAtTime(freq2, stopTime);
+              }
+              osc.connect(gainNode);
+              osc.start(startTime);
+              osc.stop(stopTime);
+
+            } else if (channel === 2) { // Triangle
+              const osc = audioCtx.createOscillator();
+              osc.type = 'triangle';
+              osc.frequency.setValueAtTime(freq1, startTime);
+              if (freq2 !== freq1) {
+                osc.frequency.linearRampToValueAtTime(freq2, stopTime);
+              }
+              osc.connect(gainNode);
+              osc.start(startTime);
+              osc.stop(stopTime);
+
+            } else if (channel === 3) { // Noise
+              const is7Bit = (duty & 1) !== 0;
+              let buffer = is7Bit ? buzzyNoiseBuf : whiteNoiseBuf;
+              if (!buffer) {
+                buffer = createNoiseBuffer(is7Bit);
+                if (is7Bit) buzzyNoiseBuf = buffer;
+                else whiteNoiseBuf = buffer;
+              }
+
+              if (buffer) {
+                const src = audioCtx.createBufferSource();
+                src.buffer = buffer;
+                src.loop = true;
+
+                const baseFreq = is7Bit ? 1000 : 4410;
+                const playbackRate = (freq1 || 440) / baseFreq;
+                src.playbackRate.setValueAtTime(playbackRate, startTime);
+                if (freq2 !== freq1 && freq2 > 0) {
+                  const endPlaybackRate = freq2 / baseFreq;
+                  src.playbackRate.linearRampToValueAtTime(endPlaybackRate, stopTime);
+                }
+
+                src.connect(gainNode);
+                src.start(startTime);
+                src.stop(stopTime);
+              }
+            }
           },
 
           diskr(destPtr, size) {

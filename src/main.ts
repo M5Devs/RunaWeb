@@ -5,6 +5,7 @@ import { unzip, Unzipped } from 'fflate';
 import { saveGame, getSavedGames, loadGameById, deleteGame, SavedGame } from './storage';
 import { PhysicalGamepadManager } from './gamepad';
 import { processExtractedFiles, validateSaveState, isProtectedKey, normalizePath, generateSessionToken, validateIPCMessage } from './engine';
+import { setupTouchEditorModal, applyTouchLayoutToDOM } from './touch-editor';
 
 declare global {
   interface Window {
@@ -1394,7 +1395,7 @@ interface KeyMapping {
   keyCode: number;
 }
 
-
+const touchEditor = setupTouchEditorModal({ showToast });
 
 function dispatchKeyEvent(type: 'keydown' | 'keyup', mapping: KeyMapping) {
   try {
@@ -1440,6 +1441,10 @@ function handleButtonPress(btnKey: string, type: 'keydown' | 'keyup') {
 function setupVirtualGamepad() {
   const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 
+  if (virtualGamepad) {
+    applyTouchLayoutToDOM(virtualGamepad);
+  }
+
   if (isTouchDevice && !gamepadManager.isConnected) {
     virtualGamepad.classList.remove('hidden');
     gamepadToggleBtn.classList.add('active');
@@ -1449,6 +1454,15 @@ function setupVirtualGamepad() {
     const isHidden = virtualGamepad.classList.toggle('hidden');
     gamepadToggleBtn.classList.toggle('active', !isHidden);
   });
+
+  const openTouchEditorBtn = document.getElementById('open-touch-editor-btn') as HTMLButtonElement;
+  if (openTouchEditorBtn) {
+    openTouchEditorBtn.addEventListener('click', () => {
+      const controlsModal = document.getElementById('controls-modal');
+      if (controlsModal) controlsModal.classList.add('hidden');
+      touchEditor.open();
+    });
+  }
 
   const buttons = virtualGamepad.querySelectorAll<HTMLButtonElement>('button');
 
