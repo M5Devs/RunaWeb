@@ -9,6 +9,8 @@ export default defineConfig({
     baseURL: 'http://localhost:4173',
     trace: 'on-first-retry',
     viewport: { width: 1280, height: 720 },
+    // headless is default; add here if you want explicit setting:
+    // headless: true,
   },
   projects: [
     {
@@ -16,10 +18,8 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'] },
     },
   ],
-  webServer: {
-    command: 'npm run build && npm run preview -- --port 4173',
-    port: 4173,
-    reuseExistingServer: !process.env.CI,
-    timeout: 30000,
-  },
+
+  // NOTE: webServer is intentionally removed. The CI workflow starts vite preview
+  // as a background process and manages its PID and teardown. Playwright will
+  // therefore connect to the already-running server at baseURL.
 });
