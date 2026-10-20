@@ -1,0 +1,116 @@
+name: Android APK Release
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'package.json' # هيشتغل تلقائياً فقط لما تعدل رقم الإصدار في package.json
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Custom Version (Leave empty to use package.json)'
+        required: false
+        default: ''
+
+jobs:
+  build-apk:
+    name: Build Android APK (Auto-Versioned)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Java JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Setup Android SDK & NDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK
+        run: |
+          sdkmanager --install "ndk;26.1.10909125"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Determine Version & Create Tag
+        id: versioning
+        shell: bash
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            VER="${{ inputs.version }}"
+          else
+            VER=$(node -p "require('./package.json').version")
+          fi
+          TAG="v${VER}"
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+          echo "version=${VER}" >> $GITHUB_OUTPUT
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if ! git rev-parse "$TAG" >/dev/null 2>&1; then
+            git tag "$TAG"
+            git push origin "$TAG" || true
+          fi
+
+      - name: Setup Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+
+      - name: Rust Cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Initialize Android project if missing
+        run: |
+          if [ ! -d "src-tauri/gen/android" ]; then
+            npx tauri android init
+          fi
+        env:
+          NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/26.1.10909125
+
+      - name: Build Android APK
+        run: |
+          export NDK_HOME=$ANDROID_HOME/ndk/26.1.10909125
+          npx tauri android build --apk
+        env:
+          NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/26.1.10909125
+
+      - name: Find & Rename Generated APK
+        id: find-apk
+        run: |
+          APK_PATH=$(find src-tauri/gen/android/app/build/outputs/apk -name "*.apk" | head -n 1)
+          if [ -n "$APK_PATH" ]; then
+            cp "$APK_PATH" ./RunaWeb-${{ steps.versioning.outputs.tag }}.apk
+            echo "apk_path=./RunaWeb-${{ steps.versioning.outputs.tag }}.apk" >> $GITHUB_OUTPUT
+            echo "apk_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "apk_exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Upload APK to GitHub Release
+        if: steps.find-apk.outputs.apk_exists == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.versioning.outputs.tag }}
+          name: 'RunaWeb ${{ steps.versioning.outputs.tag }}'
+          files: ${{ steps.find-apk.outputs.apk_path }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
