@@ -10,18 +10,33 @@ test.describe('RunaWeb E2E & Verification Suite', () => {
   });
 
   async function clickExit(page: any) {
-    await page.evaluate(() => {
-      const header = document.getElementById('app-header');
-      if (header) {
-        header.classList.remove('hud-collapsed', 'hud-hidden');
-      }
-    });
-    await page.waitForTimeout(100);
+    const drawer = page.locator('#quick-settings-drawer');
+    if (!(await drawer.isVisible())) {
+      await page.locator('#floating-hud-pill').click();
+      await expect(drawer).toBeVisible();
+      await page.waitForTimeout(350);
+    }
     await page.locator('#exit-btn').click();
   }
 
-  test('1. Single HTML Game loading, gamepad controls & IndexedDB library saving', async ({ page }) => {
+  test('1. Tabbed Arcade Hub switching, Single HTML Game loading, gamepad controls & IndexedDB library saving', async ({ page }) => {
     await page.goto('/');
+
+    // Verify Tab navigation switches views
+    const tabArcade = page.locator('#tab-my-arcade');
+    const tabAdd = page.locator('#tab-add-game');
+    const panelArcade = page.locator('#tab-content-arcade');
+    const panelAdd = page.locator('#tab-content-add');
+
+    await expect(tabArcade).toHaveClass(/active/);
+    await expect(panelArcade).toBeVisible();
+    await expect(panelAdd).not.toBeVisible();
+
+    // Switch to Add Game tab
+    await tabAdd.click();
+    await expect(tabAdd).toHaveClass(/active/);
+    await expect(panelAdd).toBeVisible();
+    await expect(panelArcade).not.toBeVisible();
 
     const sampleHtmlPath = path.resolve('src/__tests__/fixtures/sample-game.html');
     const fileInput = page.locator('#file-input');
@@ -29,14 +44,18 @@ test.describe('RunaWeb E2E & Verification Suite', () => {
     // Upload single HTML file
     await fileInput.setInputFiles(sampleHtmlPath);
 
-    // Verify loading overlay appears and vanishes
+    // Verify loading overlay appears and vanishes, entering game mode
     await expect(page.locator('body')).toHaveClass(/is-playing/, { timeout: 10000 });
 
     // Verify iframe loaded
     const iframe = page.locator('#game-frame');
     await expect(iframe).toBeVisible();
 
-    // Toggle Virtual Gamepad
+    // Open Quick Settings Drawer & Toggle Virtual Gamepad
+    await page.locator('#floating-hud-pill').click();
+    await expect(page.locator('#quick-settings-drawer')).toBeVisible();
+    await page.waitForTimeout(350);
+
     const gamepadBtn = page.locator('#gamepad-toggle-btn');
     await gamepadBtn.click();
 
@@ -52,10 +71,11 @@ test.describe('RunaWeb E2E & Verification Suite', () => {
     await btnUp.click();
     await btnA.click();
 
-    // Hover top / click floating HUD pill or click exit button directly
+    // Exit back to library shelf via Quick Settings Drawer
     await clickExit(page);
 
     await expect(page.locator('body')).toHaveClass(/mode-hub/);
+    await expect(panelArcade).toBeVisible();
 
     // Verify Library Grid contains single HTML badge
     const gameTitle = page.locator('.game-card-title');
@@ -128,7 +148,10 @@ test.describe('RunaWeb E2E & Verification Suite', () => {
     await playBtn.click();
     await expect(page.locator('body')).toHaveClass(/is-playing/, { timeout: 10000 });
 
-    // Open Virtual Gamepad
+    // Open Quick Settings Drawer & Virtual Gamepad
+    await page.locator('#floating-hud-pill').click();
+    await expect(page.locator('#quick-settings-drawer')).toBeVisible();
+    await page.waitForTimeout(350);
     await page.locator('#gamepad-toggle-btn').click();
     await expect(page.locator('#virtual-gamepad')).toBeVisible();
 
