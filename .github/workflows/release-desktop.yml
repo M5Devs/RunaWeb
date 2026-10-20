@@ -2,21 +2,31 @@ name: Desktop Release
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches:
+      - main
+    paths:
+      - 'package.json' # هيشتغل تلقائياً فقط لما تعدل رقم الإصدار في package.json
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Custom Version (Leave empty to use package.json)'
+        required: false
+        default: ''
 
 jobs:
-  release:
+  tag-and-release:
+    name: Auto Tag & Release Desktop
     permissions:
       contents: write
     strategy:
       fail-fast: false
       matrix:
         include:
+          - platform: 'windows-latest'
+            args: ''
           - platform: 'ubuntu-22.04'
             args: ''
-          - platform: 'windows-latest'
+          - platform: 'macos-latest'
             args: ''
 
     runs-on: ${{ matrix.platform }}
@@ -24,20 +34,57 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: 'npm'
+
+      - name: Determine Version & Create Tag
+        id: versioning
+        shell: bash
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            VER="${{ inputs.version }}"
+          else
+            VER=$(node -p "require('./package.json').version")
+          fi
+          TAG="v${VER}"
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+          echo "version=${VER}" >> $GITHUB_OUTPUT
+
+          # كاريت التاج تلقائياً لو مش موجود
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if ! git rev-parse "$TAG" >/dev/null 2>&1; then
+            git tag "$TAG"
+            git push origin "$TAG" || true
+          fi
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install Linux dependencies
+      - name: Rust Cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Install Linux dependencies (Ubuntu only)
         if: matrix.platform == 'ubuntu-22.04'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
 
       - name: Install frontend dependencies
         run: npm ci
@@ -47,9 +94,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: 'RunaWeb v__VERSION__'
-          releaseBody: 'RunaWeb Desktop Release v__VERSION__'
-          releaseDraft: true
+          tagName: ${{ steps.versioning.outputs.tag }}
+          releaseName: 'RunaWeb ${{ steps.versioning.outputs.tag }}'
+          releaseBody: 'RunaWeb Desktop Standalone Release ${{ steps.versioning.outputs.tag }}'
+          releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
