@@ -62,5 +62,16 @@ describe('WASM-4 Engine & Cartridge Unit Tests', () => {
     // Verify ADSR envelopes and stereo panning
     expect(html).toContain('linearRampToValueAtTime');
     expect(html).toContain('createStereoPanner');
+
+    // Verify host audio context bridge & Note Mode support
+    expect(html).toContain('getAudioContext()');
+    expect(html).toContain('window.parent.__runaAudioContext');
+    expect(html).toContain('flags & 64');
+    expect(html).toContain('440 * Math.pow(2, (note1 - 69 + (bend1 / 256)) / 12)');
+
+    // Verify pitch conversion formula calculations
+    const noteModeFreq = (note: number, bend: number = 0) => 440 * Math.pow(2, (note - 69 + (bend / 256)) / 12);
+    expect(noteModeFreq(69, 0)).toBeCloseTo(440, 2); // A4
+    expect(noteModeFreq(60, 0)).toBeCloseTo(261.63, 2); // C4
   });
 });
