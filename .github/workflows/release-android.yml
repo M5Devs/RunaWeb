@@ -5,7 +5,7 @@ on:
     branches:
       - main
     paths:
-      - 'package.json' # هيشتغل تلقائياً فقط لما تعدل رقم الإصدار في package.json
+      - 'package.json'
   workflow_dispatch:
     inputs:
       version:
@@ -104,6 +104,13 @@ jobs:
           else
             echo "apk_exists=false" >> $GITHUB_OUTPUT
           fi
+
+      - name: Upload APK Artifact
+        if: steps.find-apk.outputs.apk_exists == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: RunaWeb-${{ steps.versioning.outputs.tag }}-apk
+          path: ${{ steps.find-apk.outputs.apk_path }}
 
       - name: Upload APK to GitHub Release
         if: steps.find-apk.outputs.apk_exists == 'true'
