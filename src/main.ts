@@ -19,8 +19,29 @@ declare global {
     __runa_orig_raf?: typeof window.requestAnimationFrame;
     __runa_raf_speed_set?: boolean;
     __runa_speed_mult?: number;
+    __runaAudioContext?: AudioContext | null;
   }
 }
+
+let sharedAudioCtx: AudioContext | null = null;
+export function getSharedAudioContext(): AudioContext | null {
+  if (!sharedAudioCtx) {
+    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+    if (AudioCtx) sharedAudioCtx = new AudioCtx();
+  }
+  if (sharedAudioCtx && sharedAudioCtx.state === 'suspended') {
+    sharedAudioCtx.resume().catch(() => {});
+  }
+  return sharedAudioCtx;
+}
+
+// Unlock on real user gestures in host window
+['pointerdown', 'touchstart', 'mousedown', 'keydown'].forEach((evt) => {
+  window.addEventListener(evt, () => getSharedAudioContext(), { passive: true });
+});
+
+// Attach to window so same-origin iframe can access it directly
+(window as any).__runaAudioContext = getSharedAudioContext();
 
 // Internal app storage prefix
 const HOST_APP_KEY_PREFIX = 'runaweb_app_';
@@ -231,6 +252,7 @@ function setupHudControls() {
 
 function unlockIframeAudio() {
   try {
+    getSharedAudioContext();
     if (gameFrame && gameFrame.contentWindow) {
       gameFrame.contentWindow.postMessage({ type: 'RUNAWEB_AUDIO_UNLOCK' }, '*');
     }
@@ -259,6 +281,7 @@ function sendHandshake() {
 
 function configureIframeIsolation() {
   if (gameFrame) {
+    gameFrame.allow = 'autoplay';
     gameFrame.referrerPolicy = 'no-referrer';
     gameFrame.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-pointer-lock allow-forms');
     gameFrame.addEventListener('load', () => {
@@ -798,6 +821,7 @@ async function loadGame(fileMap: Record<string, Uint8Array>, entryPath: string =
   const cleanEntry = normalizePath(entryPath);
   const entryUrl = new URL(`${import.meta.env.BASE_URL}virtual-game/${cleanEntry}`, window.location.origin).href;
   if (gameFrame) {
+    gameFrame.allow = 'autoplay';
     gameFrame.referrerPolicy = 'no-referrer';
     gameFrame.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-pointer-lock allow-forms');
     gameFrame.src = entryUrl;

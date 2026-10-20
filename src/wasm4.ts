@@ -111,15 +111,21 @@ export function generateWasm4Html(): string {
       // Web Audio APU Sound Synthesizer Engine
       let audioCtx = null;
 
-      function initAudio() {
-        if (!audioCtx) {
-          const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-          if (AudioContextClass) {
-            audioCtx = new AudioContextClass();
-          }
+      function getAudioContext() {
+        if (window.parent && window.parent.__runaAudioContext) {
+          return window.parent.__runaAudioContext;
         }
-        if (audioCtx && audioCtx.state === 'suspended') {
-          audioCtx.resume().catch(() => {});
+        if (!audioCtx) {
+          const AudioCtx = window.AudioContext || window.webkitAudioContext;
+          if (AudioCtx) audioCtx = new AudioCtx();
+        }
+        return audioCtx;
+      }
+
+      function initAudio() {
+        const ctx = getAudioContext();
+        if (ctx && ctx.state === 'suspended') {
+          ctx.resume().catch(() => {});
         }
       }
 
@@ -131,15 +137,13 @@ export function generateWasm4Html(): string {
       window.addEventListener('message', (e) => {
         if (e.data && e.data.type === 'RUNAWEB_AUDIO_UNLOCK') {
           initAudio();
-          if (audioCtx && audioCtx.state === 'suspended') {
-            audioCtx.resume().catch(() => {});
-          }
         }
       });
 
       const pulseWaveCache = {};
 
       function getPulseWave(duty) {
+        const audioCtx = getAudioContext();
         if (!audioCtx) return null;
         if (pulseWaveCache[duty]) return pulseWaveCache[duty];
 
@@ -163,6 +167,7 @@ export function generateWasm4Html(): string {
       }
 
       function createNoiseBuffer(is7Bit) {
+        const audioCtx = getAudioContext();
         if (!audioCtx) return null;
         const sampleRate = audioCtx.sampleRate || 44100;
         const buffer = audioCtx.createBuffer(1, sampleRate, sampleRate);
@@ -422,10 +427,24 @@ export function generateWasm4Html(): string {
 
           tone(frequency, duration, volume, flags) {
             initAudio();
+            const audioCtx = getAudioContext();
             if (!audioCtx) return;
 
-            const freq1 = frequency & 0xffff;
+            let freq1 = frequency & 0xffff;
             let freq2 = (frequency >> 16) & 0xffff;
+
+            // Bit 6: Note Mode (MIDI Note numbers to Hz)
+            if ((flags & 64) !== 0) {
+              const note1 = frequency & 0xff;
+              const bend1 = (frequency >> 8) & 0xff;
+              freq1 = 440 * Math.pow(2, (note1 - 69 + (bend1 / 256)) / 12);
+
+              if (freq2 > 0) {
+                const note2 = (frequency >> 16) & 0xff;
+                const bend2 = (frequency >> 24) & 0xff;
+                freq2 = 440 * Math.pow(2, (note2 - 69 + (bend2 / 256)) / 12);
+              }
+            }
             if (freq2 === 0) freq2 = freq1;
 
             const sustainFrames = duration & 0xff;
