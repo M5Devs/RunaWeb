@@ -60,7 +60,6 @@ const gameWrapper = document.getElementById('game-wrapper') as HTMLDivElement;
 const reloadBtn = document.getElementById('reload-btn') as HTMLButtonElement;
 const fullscreenBtn = document.getElementById('fullscreen-btn') as HTMLButtonElement;
 const exitBtn = document.getElementById('exit-btn') as HTMLButtonElement;
-const collapseBtn = document.getElementById('collapse-btn') as HTMLButtonElement;
 const floatingHudPill = document.getElementById('floating-hud-pill') as HTMLButtonElement;
 const appHeader = document.getElementById('app-header') as HTMLElement;
 const gameContainer = document.getElementById('game-container') as HTMLDivElement;
@@ -69,6 +68,19 @@ const debugToggleBtn = document.getElementById('debug-toggle-btn') as HTMLButton
 const virtualGamepad = document.getElementById('virtual-gamepad') as HTMLDivElement;
 const libraryGrid = document.getElementById('library-grid') as HTMLDivElement;
 const toastContainer = document.getElementById('toast-container') as HTMLDivElement;
+
+// Hub Tab Navigation Elements
+const tabMyArcade = document.getElementById('tab-my-arcade') as HTMLButtonElement;
+const tabAddGame = document.getElementById('tab-add-game') as HTMLButtonElement;
+const tabContentArcade = document.getElementById('tab-content-arcade') as HTMLDivElement;
+const tabContentAdd = document.getElementById('tab-content-add') as HTMLDivElement;
+
+// Quick Settings Drawer Elements
+const drawerBackdrop = document.getElementById('drawer-backdrop') as HTMLDivElement;
+const closeDrawerBtn = document.getElementById('close-drawer-btn') as HTMLButtonElement;
+const drawerControlsBtn = document.getElementById('drawer-controls-btn') as HTMLButtonElement;
+const drawerTouchEditorBtn = document.getElementById('drawer-touch-editor-btn') as HTMLButtonElement;
+const controlsToggleBtn = document.getElementById('controls-toggle-btn') as HTMLButtonElement;
 
 // Resume Banner Elements
 const resumeBanner = document.getElementById('resume-banner') as HTMLDivElement;
@@ -112,10 +124,6 @@ interface SuspendedGame {
 }
 
 let activeSuspendedGame: SuspendedGame | null = null;
-
-// HUD Auto-Hide & Collapse State
-let autoHideTimer: number | null = null;
-let isHeaderPinned = false;
 let currentMode: 'hub' | 'theater' = 'hub';
 
 // Emulator State
@@ -165,89 +173,90 @@ function showToast(message: string) {
   }, 3000);
 }
 
-function resetAutoHideTimer() {
-  if (autoHideTimer !== null) {
-    window.clearTimeout(autoHideTimer);
-    autoHideTimer = null;
-  }
-
-  if (currentMode === 'theater' && !isHeaderPinned) {
-    autoHideTimer = window.setTimeout(() => {
-      if (currentMode === 'theater' && !isHeaderPinned) {
-        collapseHeader();
-      }
-    }, 3500);
+// Hub Tab Switching
+function switchHubTab(tab: 'arcade' | 'add') {
+  if (tab === 'arcade') {
+    if (tabMyArcade) tabMyArcade.classList.add('active');
+    if (tabAddGame) tabAddGame.classList.remove('active');
+    if (tabContentArcade) tabContentArcade.classList.remove('hidden');
+    if (tabContentAdd) tabContentAdd.classList.add('hidden');
+  } else {
+    if (tabAddGame) tabAddGame.classList.add('active');
+    if (tabMyArcade) tabMyArcade.classList.remove('active');
+    if (tabContentAdd) tabContentAdd.classList.remove('hidden');
+    if (tabContentArcade) tabContentArcade.classList.add('hidden');
   }
 }
 
-function expandHeader() {
-  appHeader.classList.remove('hud-collapsed', 'hud-hidden');
-  resetAutoHideTimer();
+if (tabMyArcade) {
+  tabMyArcade.addEventListener('click', () => switchHubTab('arcade'));
+}
+if (tabAddGame) {
+  tabAddGame.addEventListener('click', () => switchHubTab('add'));
 }
 
-function collapseHeader() {
-  appHeader.classList.add('hud-collapsed');
+// Quick Settings Drawer Helpers
+function openDrawer() {
+  if (drawerBackdrop) drawerBackdrop.classList.remove('hidden');
 }
 
-function setupHudControls() {
-  if (collapseBtn) {
-    collapseBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      collapseHeader();
-    });
+function closeDrawer() {
+  if (drawerBackdrop) drawerBackdrop.classList.add('hidden');
+}
+
+function toggleDrawer() {
+  if (drawerBackdrop) {
+    if (drawerBackdrop.classList.contains('hidden')) {
+      openDrawer();
+    } else {
+      closeDrawer();
+    }
   }
+}
 
+function setupQuickSettingsDrawer() {
   if (floatingHudPill) {
     floatingHudPill.addEventListener('click', (e) => {
       e.stopPropagation();
-      expandHeader();
+      toggleDrawer();
     });
   }
 
-  const handleActivity = (e: MouseEvent | TouchEvent) => {
-    if (currentMode !== 'theater') return;
+  if (closeDrawerBtn) {
+    closeDrawerBtn.addEventListener('click', () => closeDrawer());
+  }
 
-    let clientY = 0;
-    if (e instanceof MouseEvent) {
-      clientY = e.clientY;
-    } else if (e.touches && e.touches.length > 0) {
-      clientY = e.touches[0].clientY;
-    }
-
-    if (appHeader.classList.contains('hud-collapsed') || appHeader.classList.contains('hud-hidden')) {
-      if (clientY <= 30) {
-        expandHeader();
+  if (drawerBackdrop) {
+    drawerBackdrop.addEventListener('click', (e) => {
+      if (e.target === drawerBackdrop) {
+        closeDrawer();
       }
-    } else {
-      resetAutoHideTimer();
-    }
-  };
+    });
+  }
 
-  window.addEventListener('mousemove', handleActivity);
-  window.addEventListener('touchstart', handleActivity, { passive: true });
-
-  window.addEventListener('click', (e) => {
-    if (currentMode !== 'theater') return;
-    const target = e.target as Node;
-    if (
-      !appHeader.contains(target) &&
-      !floatingHudPill.contains(target) &&
-      (!saveModal || saveModal.classList.contains('hidden') || !saveModal.contains(target))
-    ) {
-      collapseHeader();
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      if (drawerBackdrop && !drawerBackdrop.classList.contains('hidden')) {
+        closeDrawer();
+      }
     }
   });
 
-  appHeader.addEventListener('mouseenter', () => {
-    if (autoHideTimer !== null) {
-      window.clearTimeout(autoHideTimer);
-      autoHideTimer = null;
-    }
-  });
+  if (drawerControlsBtn) {
+    drawerControlsBtn.addEventListener('click', () => {
+      closeDrawer();
+      const controlsModal = document.getElementById('controls-modal');
+      if (controlsModal) controlsModal.classList.remove('hidden');
+    });
+  }
 
-  appHeader.addEventListener('mouseleave', () => {
-    resetAutoHideTimer();
-  });
+  if (controlsToggleBtn) {
+    controlsToggleBtn.addEventListener('click', () => {
+      closeDrawer();
+      const controlsModal = document.getElementById('controls-modal');
+      if (controlsModal) controlsModal.classList.remove('hidden');
+    });
+  }
 }
 
 function unlockIframeAudio() {
@@ -393,6 +402,7 @@ function suspendGame() {
     resumeBanner.classList.remove('hidden');
   }
 
+  closeDrawer();
   setViewMode('hub');
 }
 
@@ -425,6 +435,8 @@ function terminateGame() {
 
 function setViewMode(mode: 'hub' | 'theater') {
   currentMode = mode;
+  closeDrawer();
+
   if (mode === 'theater') {
     document.body.classList.remove('mode-hub');
     document.body.classList.add('mode-theater', 'is-playing');
@@ -436,9 +448,6 @@ function setViewMode(mode: 'hub' | 'theater') {
     crtBtn.disabled = false;
     reloadBtn.disabled = false;
     fullscreenBtn.disabled = false;
-
-    isHeaderPinned = false;
-    expandHeader();
   } else {
     document.body.classList.remove('mode-theater', 'is-playing');
     document.body.classList.add('mode-hub');
@@ -453,14 +462,12 @@ function setViewMode(mode: 'hub' | 'theater') {
     if (isPaused) togglePause();
     if (isFastForward) toggleFastForward();
 
-    if (autoHideTimer !== null) {
-      window.clearTimeout(autoHideTimer);
-      autoHideTimer = null;
-    }
     appHeader.classList.remove('hud-collapsed', 'hud-hidden');
 
     reloadBtn.disabled = true;
     fullscreenBtn.disabled = true;
+
+    switchHubTab('arcade');
   }
 }
 
@@ -852,7 +859,7 @@ async function refreshGameLibrary() {
       emptyIcon.textContent = '👾';
 
       const emptyText = document.createElement('p');
-      emptyText.textContent = 'Your arcade shelf is empty! Drop a game to start your collection.';
+      emptyText.textContent = 'Your arcade shelf is empty! Switch to "Add Game" to drop a file.';
 
       emptyContainer.appendChild(emptyIcon);
       emptyContainer.appendChild(emptyText);
@@ -1323,6 +1330,7 @@ function setIframeLocalStorage(storageData: Record<string, string>) {
 function setupSaveManager() {
   if (savesToggleBtn) {
     savesToggleBtn.addEventListener('click', () => {
+      closeDrawer();
       if (saveModal) {
         saveModal.classList.remove('hidden');
         if (saveModalStatus) saveModalStatus.textContent = '';
@@ -1492,18 +1500,25 @@ function setupVirtualGamepad() {
   gamepadToggleBtn.addEventListener('click', () => {
     const isHidden = virtualGamepad.classList.toggle('hidden');
     gamepadToggleBtn.classList.toggle('active', !isHidden);
+    closeDrawer();
   });
 
   const openTouchEditorBtn = document.getElementById('open-touch-editor-btn') as HTMLButtonElement;
+  const triggerTouchEditor = () => {
+    closeDrawer();
+    const controlsModal = document.getElementById('controls-modal');
+    if (controlsModal) controlsModal.classList.add('hidden');
+    if (!isPaused) {
+      togglePause();
+    }
+    touchEditor.open();
+  };
+
   if (openTouchEditorBtn) {
-    openTouchEditorBtn.addEventListener('click', () => {
-      const controlsModal = document.getElementById('controls-modal');
-      if (controlsModal) controlsModal.classList.add('hidden');
-      if (!isPaused) {
-        togglePause();
-      }
-      touchEditor.open();
-    });
+    openTouchEditorBtn.addEventListener('click', triggerTouchEditor);
+  }
+  if (drawerTouchEditorBtn) {
+    drawerTouchEditorBtn.addEventListener('click', triggerTouchEditor);
   }
 
   const buttons = virtualGamepad.querySelectorAll<HTMLButtonElement>('button');
@@ -1560,7 +1575,7 @@ function setupVirtualGamepad() {
 registerServiceWorker();
 configureIframeIsolation();
 setupErudaDevTools();
-setupHudControls();
+setupQuickSettingsDrawer();
 setupSaveManager();
 setupVirtualGamepad();
 setupControlsModal({ showToast });

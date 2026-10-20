@@ -65,6 +65,14 @@
         transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1);
       }
 
+      body.mode-hub .controls .btn:not(#controls-toggle-btn):not(#debug-toggle-btn) {
+        display: none !important;
+      }
+
+      body.is-playing header {
+        display: none !important;
+      }
+
       header.hud-collapsed, header.hud-hidden {
         transform: translateY(-100%);
         opacity: 0;
@@ -105,10 +113,8 @@
         transform: translateY(0) scale(1.04);
       }
 
-      body.mode-theater header.hud-collapsed ~ #floating-hud-pill,
-      body.mode-theater header.hud-hidden ~ #floating-hud-pill,
-      body.is-playing header.hud-collapsed ~ #floating-hud-pill,
-      body.is-playing header.hud-hidden ~ #floating-hud-pill {
+      body.is-playing #floating-hud-pill,
+      body.mode-theater #floating-hud-pill {
         opacity: 1;
         pointer-events: auto;
         transform: translateY(0);
@@ -156,6 +162,7 @@
         letter-spacing: 0.5px;
         display: inline-flex;
         align-items: center;
+        justify-content: center;
         gap: 0.4rem;
         transition: all 0.25s ease;
         backdrop-filter: blur(8px);
@@ -205,6 +212,116 @@
         padding: 0.45rem 0.7rem;
         font-size: 0.9rem;
         display: inline-flex;
+      }
+
+      /* Quick Settings Drawer Styles */
+      .drawer-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 550;
+        background: rgba(8, 9, 13, 0.65);
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+        opacity: 1;
+        visibility: visible;
+        transition: opacity 0.25s ease;
+        display: flex;
+        justify-content: flex-end;
+      }
+
+      .drawer-backdrop.hidden {
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+      }
+
+      .quick-settings-drawer {
+        width: 100%;
+        max-width: 380px;
+        height: 100%;
+        background: rgba(18, 20, 29, 0.96);
+        backdrop-filter: blur(24px);
+        -webkit-backdrop-filter: blur(24px);
+        border-left: 1px solid var(--glass-border-hover);
+        box-shadow: -10px 0 30px rgba(0, 0, 0, 0.8), 0 0 25px rgba(0, 242, 254, 0.15);
+        display: flex;
+        flex-direction: column;
+        z-index: 560;
+      }
+
+      .drawer-header {
+        padding: 1.25rem 1.5rem;
+        border-bottom: 1px solid var(--glass-border);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background: rgba(18, 20, 29, 0.98);
+        z-index: 10;
+        flex-shrink: 0;
+      }
+
+      .drawer-title {
+        font-size: 1.15rem;
+        font-weight: 700;
+        color: var(--text-primary);
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+
+      .drawer-close-btn {
+        background: none;
+        border: none;
+        color: var(--text-muted);
+        font-size: 1.3rem;
+        cursor: pointer;
+        padding: 4px 8px;
+        border-radius: 8px;
+        transition: all 0.2s ease;
+      }
+
+      .drawer-close-btn:hover {
+        color: var(--danger);
+        background: rgba(255, 0, 85, 0.12);
+      }
+
+      .drawer-body {
+        padding: 1.25rem 1.5rem;
+        display: flex;
+        flex-direction: column;
+        gap: 1.25rem;
+        overflow-y: auto;
+        flex: 1;
+      }
+
+      .drawer-section {
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+      }
+
+      .drawer-section-title {
+        font-size: 0.8rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        color: var(--neon-cyan);
+      }
+
+      .drawer-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 0.6rem;
+      }
+
+      .drawer-grid .btn {
+        justify-content: center;
+        width: 100%;
+        padding: 0.6rem 0.8rem;
+      }
+
+      .drawer-grid .btn-full {
+        grid-column: 1 / -1;
       }
 
       /* Modal / Overlay */
@@ -579,12 +696,56 @@
         display: flex;
         flex-direction: column;
         flex: 1;
-        padding: 2rem;
-        gap: 2rem;
+        padding: 1.5rem 2rem 2rem;
+        gap: 1.5rem;
         overflow-y: auto;
         max-width: 1300px;
         margin: 0 auto;
         width: 100%;
+      }
+
+      /* Hub Tabs */
+      .hub-tabs {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 0.75rem;
+        margin-bottom: 0.5rem;
+      }
+
+      .hub-tab-btn {
+        background: rgba(255, 255, 255, 0.05);
+        color: var(--text-muted);
+        border: 1px solid var(--glass-border);
+        padding: 0.6rem 1.4rem;
+        border-radius: 50px;
+        font-family: inherit;
+        font-size: 0.95rem;
+        font-weight: 700;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        transition: all 0.25s ease;
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+      }
+
+      .hub-tab-btn:hover {
+        background: rgba(0, 242, 254, 0.12);
+        color: var(--text-primary);
+        border-color: var(--neon-cyan);
+      }
+
+      .hub-tab-btn.active {
+        background: linear-gradient(135deg, rgba(0, 242, 254, 0.25), rgba(157, 78, 221, 0.25));
+        border-color: var(--neon-cyan);
+        color: var(--neon-cyan);
+        box-shadow: 0 0 15px rgba(0, 242, 254, 0.3);
+      }
+
+      .tab-panel.hidden {
+        display: none !important;
       }
 
       /* Hero Dropzone */
@@ -695,6 +856,7 @@
         justify-content: space-between;
         align-items: center;
         gap: 1rem;
+        margin-bottom: 1.5rem;
         box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 0 20px rgba(0, 242, 254, 0.2);
         transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
         flex-wrap: wrap;
@@ -1377,52 +1539,90 @@
         RUNAWEB
       </div>
       <div class="controls">
-        <button id="pause-btn" class="btn" disabled title="Pause Game">
-          ⏸️ Pause
-        </button>
-        <button id="fast-forward-btn" class="btn" disabled title="Fast-Forward Speed">
-          ⏩ 1x
-        </button>
-        <button id="aspect-btn" class="btn" disabled title="Aspect Ratio Mode">
-          📐 Fit
-        </button>
-        <button id="crt-btn" class="btn" disabled title="Toggle CRT Scanline Overlay">
-          📺 CRT
-        </button>
-        <button id="saves-toggle-btn" class="btn" title="Save State Manager">
-          💾 Saves
-        </button>
-        <button id="controls-toggle-btn" class="btn" title="Key Mapping Controls">
-          ⚙️ Controls
-        </button>
-        <button id="keyboard-toggle-btn" class="btn" title="Toggle On-Screen Virtual Keyboard">
-          ⌨️ Keyboard
-        </button>
-        <button id="gamepad-toggle-btn" class="btn" title="Toggle Virtual Gamepad">
-          🎮 Gamepad
+        <button id="controls-toggle-btn" class="btn" title="Key Mapping Controls / Settings">
+          ⚙️
         </button>
         <button id="debug-toggle-btn" class="btn" title="Toggle Eruda Mobile DevTools">
-          🐛 Debug
-        </button>
-        <button id="reload-btn" class="btn" disabled title="Reload Game">
-          🔄 Reload
-        </button>
-        <button id="fullscreen-btn" class="btn" disabled title="Toggle Fullscreen">
-          ⛶ Fullscreen
-        </button>
-        <button id="exit-btn" class="btn btn-exit" style="display: none;" title="Exit to Library">
-          ✕ Exit
-        </button>
-        <button id="collapse-btn" class="btn btn-collapse" title="Collapse Header">
-          ▲
+          🐛
         </button>
       </div>
     </header>
 
     <!-- Accessible Floating HUD Pill Badge -->
-    <button id="floating-hud-pill" title="Expand Control Bar">
-      <span>⚙️ Menu ▾</span>
+    <button id="floating-hud-pill" title="Open Quick Settings Menu">
+      <span>⚙️ Menu</span>
     </button>
+
+    <!-- Slide-Out Quick Settings Drawer Overlay -->
+    <div id="drawer-backdrop" class="drawer-backdrop hidden">
+      <aside id="quick-settings-drawer" class="quick-settings-drawer">
+        <div class="drawer-header">
+          <h3 class="drawer-title">⚙️ Quick Settings</h3>
+          <button id="close-drawer-btn" class="drawer-close-btn" title="Close Drawer">✕</button>
+        </div>
+        <div class="drawer-body">
+          <div class="drawer-section">
+            <h4 class="drawer-section-title">Section 1: Game State</h4>
+            <div class="drawer-grid">
+              <button id="pause-btn" class="btn" disabled title="Pause Game">
+                ⏸️ Pause
+              </button>
+              <button id="fast-forward-btn" class="btn" disabled title="Fast-Forward Speed">
+                ⏩ 1x
+              </button>
+              <button id="reload-btn" class="btn" disabled title="Reload Game">
+                🔄 Reload
+              </button>
+              <button id="fullscreen-btn" class="btn" disabled title="Toggle Fullscreen">
+                ⛶ Fullscreen
+              </button>
+              <button id="exit-btn" class="btn btn-exit btn-full" title="Exit to Library">
+                🚪 Exit to Library
+              </button>
+            </div>
+          </div>
+
+          <div class="drawer-section">
+            <h4 class="drawer-section-title">Section 2: Display</h4>
+            <div class="drawer-grid">
+              <button id="aspect-btn" class="btn" disabled title="Aspect Ratio Mode">
+                📐 Fit
+              </button>
+              <button id="crt-btn" class="btn" disabled title="Toggle CRT Scanline Overlay">
+                📺 CRT
+              </button>
+            </div>
+          </div>
+
+          <div class="drawer-section">
+            <h4 class="drawer-section-title">Section 3: Controls</h4>
+            <div class="drawer-grid">
+              <button id="gamepad-toggle-btn" class="btn" title="Toggle Virtual Gamepad">
+                🎮 Gamepad
+              </button>
+              <button id="keyboard-toggle-btn" class="btn" title="Toggle On-Screen Virtual Keyboard">
+                ⌨️ Keyboard
+              </button>
+              <button id="drawer-touch-editor-btn" class="btn" title="Customize Touch Layout">
+                ✏️ Touch Layout
+              </button>
+              <button id="drawer-controls-btn" class="btn" title="Rebind Keys">
+                ⚙️ Rebind Keys
+              </button>
+            </div>
+          </div>
+
+          <div class="drawer-section">
+            <h4 class="drawer-section-title">Section 4: Saves</h4>
+            <div class="drawer-grid">
+              <button id="saves-toggle-btn" class="btn btn-full" title="Save State Manager">
+                💾 Open Save State Manager
+              </button>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </div>
 
     <!-- Toast Notifications Container -->
     <div id="toast-container"></div>
@@ -1442,53 +1642,69 @@
     <main>
       <!-- Hub / Home View State -->
       <div class="hub-view">
-        <!-- Resume Active Game Banner -->
-        <div id="resume-banner" class="resume-banner hidden">
-          <div class="resume-banner-info">
-            <span class="resume-pulse"></span>
-            <span class="resume-banner-label">Currently Playing:</span>
-            <span id="resume-game-title" class="resume-game-title">Game Title</span>
-          </div>
-          <div class="resume-banner-actions">
-            <button id="resume-game-btn" class="btn btn-resume">
-              ▶ Resume Game
-            </button>
-            <button id="terminate-game-btn" class="btn btn-terminate" title="Terminate / Close Game">
-              ⏹ Terminate / Close Game
-            </button>
-          </div>
-        </div>
+        <!-- Modern Pill Tabs -->
+        <nav class="hub-tabs">
+          <button id="tab-my-arcade" class="hub-tab-btn active">
+            <span>👾</span> My Arcade
+          </button>
+          <button id="tab-add-game" class="hub-tab-btn">
+            <span>➕</span> Add Game
+          </button>
+        </nav>
 
-        <!-- Futuristic Hero Dropzone -->
-        <div class="dropzone-wrapper">
-          <div id="dropzone">
-            <svg class="dropzone-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
-            </svg>
-            <h2 class="dropzone-title">Drop HTML5 or WASM-4 Game (.zip, .html, .wasm) Here</h2>
-            <p class="dropzone-subtitle">Instant, high-performance in-memory execution</p>
-            <label for="file-input" class="file-select-btn">
-              <span>Select Game File (.zip, .html, .wasm)</span>
-            </label>
-            <input type="file" id="file-input" accept=".zip,.html,.htm,.wasm" />
-            <div id="status"></div>
-          </div>
-        </div>
-
-        <!-- Saved Games Library Section -->
-        <section class="library-section">
-          <div class="library-section-header">
-            <h3 class="library-section-title">
-              <span>👾</span> Arcade Shelf
-            </h3>
-          </div>
-          <div class="library-grid" id="library-grid">
-            <div class="library-empty">
-              <span class="library-empty-icon">👾</span>
-              <p>Your arcade shelf is empty! Drop a game to start your collection.</p>
+        <!-- Tab 1: My Arcade Panel -->
+        <div id="tab-content-arcade" class="tab-panel">
+          <!-- Resume Active Game Banner -->
+          <div id="resume-banner" class="resume-banner hidden">
+            <div class="resume-banner-info">
+              <span class="resume-pulse"></span>
+              <span class="resume-banner-label">Currently Playing:</span>
+              <span id="resume-game-title" class="resume-game-title">Game Title</span>
+            </div>
+            <div class="resume-banner-actions">
+              <button id="resume-game-btn" class="btn btn-resume">
+                ▶ Resume Game
+              </button>
+              <button id="terminate-game-btn" class="btn btn-terminate" title="Terminate / Close Game">
+                ⏹ Terminate / Close Game
+              </button>
             </div>
           </div>
-        </section>
+
+          <!-- Saved Games Library Section -->
+          <section class="library-section">
+            <div class="library-section-header">
+              <h3 class="library-section-title">
+                <span>👾</span> Arcade Shelf
+              </h3>
+            </div>
+            <div class="library-grid" id="library-grid">
+              <div class="library-empty">
+                <span class="library-empty-icon">👾</span>
+                <p>Your arcade shelf is empty! Switch to "Add Game" to drop a file.</p>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <!-- Tab 2: Add Game Panel -->
+        <div id="tab-content-add" class="tab-panel hidden">
+          <!-- Futuristic Hero Dropzone -->
+          <div class="dropzone-wrapper">
+            <div id="dropzone">
+              <svg class="dropzone-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+              </svg>
+              <h2 class="dropzone-title">Drop HTML5 or WASM-4 Game (.zip, .html, .wasm) Here</h2>
+              <p class="dropzone-subtitle">Instant, high-performance in-memory execution</p>
+              <label for="file-input" class="file-select-btn">
+                <span>Select Game File (.zip, .html, .wasm)</span>
+              </label>
+              <input type="file" id="file-input" accept=".zip,.html,.htm,.wasm" />
+              <div id="status"></div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- Theater / Game Playing State Container -->
